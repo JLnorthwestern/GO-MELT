@@ -1,0 +1,6 @@
+cuda-python
+--find-links https://storage.googleapis.com/jax-releases/jax_cuda_releases.html 
+jax[cuda12_pip]==0.4.13
+numpy==1.24.1
+scipy==1.9.0
+pyevtk # For output to vtk
