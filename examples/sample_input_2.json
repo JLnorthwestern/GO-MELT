@@ -1,0 +1,29 @@
+{
+	"full": {
+		"elements": [16, 16, 8],
+		"bounds": {"x": [0, 4], "y": [0, 4], "z": [0, 2]},
+		"conditions": {"x": [298.15, 298.15], "y": [298.15, 298.15], "z": [298.15, 298.15]}
+	},
+	"sub1": {
+		"elements": [16, 16, 8],
+		"bounds": {"x": [1, 3], "y": [0, 2], "z": [1, 2]}
+	},
+	"sub2": {
+		"elements": [16, 16, 8],
+		"bounds": {"x": [1.5, 2.5], "y": [0.5, 1.5], "z": [1.5, 2]}
+	},
+	"properties":{
+		"timestep": 5e-6,
+		"laser_eta": 0.3
+	},
+	"nonmesh": {
+		"save": "./sample_results_2/",
+		"toolpath": "sample_laser_2.txt",
+		"x_start_cube": 2,
+		"y_start_cube": 1,
+		"z_start_cube": 2,
+		"x_length_cube": 1,
+		"y_length_cube": 1,
+		"z_length_cube": 0
+	}
+}

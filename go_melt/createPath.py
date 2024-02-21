@@ -10,8 +10,8 @@ def createPath(solver_input):
 
     # Start location of cube
     startx = solver_input.get("nonmesh", {}).get("x_start_cube", 2)
-    starty = solver_input.get("nonmesh", {}).get("x_start_cube", 1)
-    startz = solver_input.get("nonmesh", {}).get("x_start_cube", 2)
+    starty = solver_input.get("nonmesh", {}).get("y_start_cube", 1)
+    startz = solver_input.get("nonmesh", {}).get("z_start_cube", 2)
     start = [startx,starty,startz]
     
     # Size of cube to be printed

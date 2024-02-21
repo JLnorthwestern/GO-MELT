@@ -16,7 +16,9 @@ except:
     print('No GPU found.')
 
 # Load input file
-input_file = "../examples/sample_input_1.json"
+input_file = "../examples/sample_input_2.json"
+#input_file = "../examples/sample_input_1.json"
+
 with open(input_file, "r") as read_file:
     solver_input = json.load(read_file)
 
