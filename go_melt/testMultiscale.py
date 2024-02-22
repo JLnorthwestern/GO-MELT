@@ -33,14 +33,14 @@ def testMultiscale(solver_input: dict):
         return json.loads(json.dumps(dict1), object_hook=obj)
 
     # Coarse domain
-    _ = solver_input.get('full', {})
-    full = dict2obj(_)
+    _ = solver_input.get('Level1', {})
+    Level1 = dict2obj(_)
     # Finer domain
-    _ = solver_input.get('sub1', {})
-    sub1 = dict2obj(_)
+    _ = solver_input.get('Level2', {})
+    Level2 = dict2obj(_)
     # Finest domain
-    _ = solver_input.get('sub2', {})
-    sub2 = dict2obj(_)
+    _ = solver_input.get('Level3', {})
+    Level3 = dict2obj(_)
     ### Parse inputs into multiple objects (END) ###
 
     ### User-defined parameters (START) ###
@@ -53,7 +53,7 @@ def testMultiscale(solver_input: dict):
     # How frequently to record and/or check to move the fine domain
     record_step = solver_input.get("nonmesh", {}).get("record_step", 1)
     # How frequently (factor) to record coarse-domain
-    full_record_inc = solver_input.get("nonmesh", {}).get("full_record_step", 1)
+    Level1_record_inc = solver_input.get("nonmesh", {}).get("Level1_record_step", 1)
     # Where to save
     save_path = solver_input.get("nonmesh", {}).get("save", "results/")
     # Whether to save
@@ -92,27 +92,27 @@ def testMultiscale(solver_input: dict):
 
     ### Calculated parameters (START) ###
     # Domain and element lengths
-    full.length, full.h = calc_length_h(full)
-    sub1.length, sub1.h = calc_length_h(sub1)
-    sub2.length, sub2.h = calc_length_h(sub2)
+    Level1.length, Level1.h = calc_length_h(Level1)
+    Level2.length, Level2.h = calc_length_h(Level2)
+    Level3.length, Level3.h = calc_length_h(Level3)
     # Constrain fine mesh based on initial conditions
-    sub1.bounds.ix, sub1.bounds.iy, sub1.bounds.iz = find_max_const(full, sub1)
-    sub2.bounds.ix, sub2.bounds.iy, sub2.bounds.iz = find_max_const(full, sub2)
+    Level2.bounds.ix, Level2.bounds.iy, Level2.bounds.iz = find_max_const(Level1, Level2)
+    Level3.bounds.ix, Level3.bounds.iy, Level3.bounds.iz = find_max_const(Level1, Level3)
     # Calculate number of nodes in each direction
-    full.nodes = calcNumNodes(full.elements)
-    sub1.nodes = calcNumNodes(sub1.elements)
-    sub2.nodes = calcNumNodes(sub2.elements)
+    Level1.nodes = calcNumNodes(Level1.elements)
+    Level2.nodes = calcNumNodes(Level2.elements)
+    Level3.nodes = calcNumNodes(Level3.elements)
     # Calculate total number of nodes (nn) and elements (ne)
-    full.ne = full.elements[0] * full.elements[1] * full.elements[2]
-    full.nn = full.nodes[0] * full.nodes[1] * full.nodes[2]
-    sub1.ne = sub1.elements[0] * sub1.elements[1] * sub1.elements[2]
-    sub1.nn = sub1.nodes[0] * sub1.nodes[1] * sub1.nodes[2]
-    sub2.ne = sub2.elements[0] * sub2.elements[1] * sub2.elements[2]
-    sub2.nn = sub2.nodes[0] * sub2.nodes[1] * sub2.nodes[2]
+    Level1.ne = Level1.elements[0] * Level1.elements[1] * Level1.elements[2]
+    Level1.nn = Level1.nodes[0] * Level1.nodes[1] * Level1.nodes[2]
+    Level2.ne = Level2.elements[0] * Level2.elements[1] * Level2.elements[2]
+    Level2.nn = Level2.nodes[0] * Level2.nodes[1] * Level2.nodes[2]
+    Level3.ne = Level3.elements[0] * Level3.elements[1] * Level3.elements[2]
+    Level3.nn = Level3.nodes[0] * Level3.nodes[1] * Level3.nodes[2]
     # Get BC indices
-    full.widx, full.eidx, full.sidx, full.nidx, full.bidx, full.tidx = getBCindices(full)
-    sub1.widx, sub1.eidx, sub1.sidx, sub1.nidx, sub1.bidx, sub1.tidx = getBCindices(sub1)
-    sub2.widx, sub2.eidx, sub2.sidx, sub2.nidx, sub2.bidx, sub2.tidx = getBCindices(sub2)
+    Level1.widx, Level1.eidx, Level1.sidx, Level1.nidx, Level1.bidx, Level1.tidx = getBCindices(Level1)
+    Level2.widx, Level2.eidx, Level2.sidx, Level2.nidx, Level2.bidx, Level2.tidx = getBCindices(Level2)
+    Level3.widx, Level3.eidx, Level3.sidx, Level3.nidx, Level3.bidx, Level3.tidx = getBCindices(Level3)
     ### Calculated parameters (END) ###
     
     # Find starting position and how often position changes (get initial position)
@@ -123,188 +123,188 @@ def testMultiscale(solver_input: dict):
     v = vtot + vstart
     _ = tool_path_file.readline()
     if steady == 1:
-        sub2step = int(1e8)
+        Level3step = int(1e8)
     else:
         vnext = np.array([float(_i) for _i in _.split(',')])
         if np.linalg.norm(v - vnext) == 0:
-            sub2step = int(1e8)
+            Level3step = int(1e8)
         else:
-            sub2step = int(np.ceil(np.min(np.array(sub1.h))/np.linalg.norm(v - vnext)))
+            Level3step = int(np.ceil(np.min(np.array(Level2.h))/np.linalg.norm(v - vnext)))
     tool_path_file.close()
 
     # Set up meshes for all three levels
-    full.node_coords, full.connect = createMesh3D(
-        (full.bounds.x[0], full.bounds.x[1], full.nodes[0]),
-        (full.bounds.y[0], full.bounds.y[1], full.nodes[1]),
-        (full.bounds.z[0], full.bounds.z[1], full.nodes[2]))
-    sub1.node_coords, sub1.connect = createMesh3D(
-        (sub1.bounds.x[0], sub1.bounds.x[1], sub1.nodes[0]),
-        (sub1.bounds.y[0], sub1.bounds.y[1], sub1.nodes[1]),
-        (sub1.bounds.z[0], sub1.bounds.z[1], sub1.nodes[2]))
-    sub2.node_coords, sub2.connect = createMesh3D(
-        (sub2.bounds.x[0], sub2.bounds.x[1], sub2.nodes[0]),
-        (sub2.bounds.y[0], sub2.bounds.y[1], sub2.nodes[1]),
-        (sub2.bounds.z[0], sub2.bounds.z[1], sub2.nodes[2]))
+    Level1.node_coords, Level1.connect = createMesh3D(
+        (Level1.bounds.x[0], Level1.bounds.x[1], Level1.nodes[0]),
+        (Level1.bounds.y[0], Level1.bounds.y[1], Level1.nodes[1]),
+        (Level1.bounds.z[0], Level1.bounds.z[1], Level1.nodes[2]))
+    Level2.node_coords, Level2.connect = createMesh3D(
+        (Level2.bounds.x[0], Level2.bounds.x[1], Level2.nodes[0]),
+        (Level2.bounds.y[0], Level2.bounds.y[1], Level2.nodes[1]),
+        (Level2.bounds.z[0], Level2.bounds.z[1], Level2.nodes[2]))
+    Level3.node_coords, Level3.connect = createMesh3D(
+        (Level3.bounds.x[0], Level3.bounds.x[1], Level3.nodes[0]),
+        (Level3.bounds.y[0], Level3.bounds.y[1], Level3.nodes[1]),
+        (Level3.bounds.z[0], Level3.bounds.z[1], Level3.nodes[2]))
 
     # Deep copy initial coordinates for updating mesh position
-    sub1.init_node_coors = copy.deepcopy(sub1.node_coords)
-    sub2.init_node_coors = copy.deepcopy(sub2.node_coords)
+    Level2.init_node_coors = copy.deepcopy(Level2.node_coords)
+    Level3.init_node_coors = copy.deepcopy(Level3.node_coords)
 
     # Preallocate
-    sub1.T = T_amb * jnp.ones(sub1.nn)
-    sub1.T0 = T_amb * jnp.ones(sub1.nn)
-    sub1.Tprime = jnp.zeros(sub1.nn)
-    sub1.Tprime0 = copy.deepcopy(sub1.Tprime)
-    sub2.T = T_amb * jnp.ones(sub2.nn)
-    sub2.T0 = T_amb * jnp.ones(sub2.nn)
-    sub2.Tprime = jnp.zeros(sub2.nn)
-    sub2.Tprime0 = copy.deepcopy(sub2.Tprime)
-    full.T = T_amb * jnp.ones(full.nn)
-    full.T0 = T_amb * jnp.ones(full.nn)
+    Level2.T = T_amb * jnp.ones(Level2.nn)
+    Level2.T0 = T_amb * jnp.ones(Level2.nn)
+    Level2.Tprime = jnp.zeros(Level2.nn)
+    Level2.Tprime0 = copy.deepcopy(Level2.Tprime)
+    Level3.T = T_amb * jnp.ones(Level3.nn)
+    Level3.T0 = T_amb * jnp.ones(Level3.nn)
+    Level3.Tprime = jnp.zeros(Level3.nn)
+    Level3.Tprime0 = copy.deepcopy(Level3.Tprime)
+    Level1.T = T_amb * jnp.ones(Level1.nn)
+    Level1.T0 = T_amb * jnp.ones(Level1.nn)
 
     # Get overlapping nodes in x, y, and z directions (separately)
-    sub1.orig_overlap_nodes = [getCoarseNodesInFineRegion(sub1.node_coords[0], full.node_coords[0]),
-                               getCoarseNodesInFineRegion(sub1.node_coords[1], full.node_coords[1]),
-                               getCoarseNodesInFineRegion(sub1.node_coords[2], full.node_coords[2])]
+    Level2.orig_overlap_nodes = [getCoarseNodesInFineRegion(Level2.node_coords[0], Level1.node_coords[0]),
+                               getCoarseNodesInFineRegion(Level2.node_coords[1], Level1.node_coords[1]),
+                               getCoarseNodesInFineRegion(Level2.node_coords[2], Level1.node_coords[2])]
 
-    sub1.orig_overlap_coors = [jnp.array([full.node_coords[0][_] for _ in sub1.orig_overlap_nodes[0]]),
-                               jnp.array([full.node_coords[1][_] for _ in sub1.orig_overlap_nodes[1]]),
-                               jnp.array([full.node_coords[2][_] for _ in sub1.orig_overlap_nodes[2]])]
+    Level2.orig_overlap_coors = [jnp.array([Level1.node_coords[0][_] for _ in Level2.orig_overlap_nodes[0]]),
+                               jnp.array([Level1.node_coords[1][_] for _ in Level2.orig_overlap_nodes[1]]),
+                               jnp.array([Level1.node_coords[2][_] for _ in Level2.orig_overlap_nodes[2]])]
 
-    sub2.orig_overlap_nodes = [getCoarseNodesInFineRegion(sub2.node_coords[0], sub1.node_coords[0]),
-                               getCoarseNodesInFineRegion(sub2.node_coords[1], sub1.node_coords[1]),
-                               getCoarseNodesInFineRegion(sub2.node_coords[2], sub1.node_coords[2])]
+    Level3.orig_overlap_nodes = [getCoarseNodesInFineRegion(Level3.node_coords[0], Level2.node_coords[0]),
+                               getCoarseNodesInFineRegion(Level3.node_coords[1], Level2.node_coords[1]),
+                               getCoarseNodesInFineRegion(Level3.node_coords[2], Level2.node_coords[2])]
 
-    sub2.orig_overlap_coors = [jnp.array([sub1.node_coords[0][_] for _ in sub2.orig_overlap_nodes[0]]),
-                               jnp.array([sub1.node_coords[1][_] for _ in sub2.orig_overlap_nodes[1]]),
-                               jnp.array([sub1.node_coords[2][_] for _ in sub2.orig_overlap_nodes[2]])]
+    Level3.orig_overlap_coors = [jnp.array([Level2.node_coords[0][_] for _ in Level3.orig_overlap_nodes[0]]),
+                               jnp.array([Level2.node_coords[1][_] for _ in Level3.orig_overlap_nodes[1]]),
+                               jnp.array([Level2.node_coords[2][_] for _ in Level3.orig_overlap_nodes[2]])]
 
     # Identify coarse nodes inside fine-scale region
-    sub1.overlapNodes = copy.deepcopy(sub1.orig_overlap_nodes)
-    sub1.overlapCoords = copy.deepcopy(sub1.orig_overlap_coors)
-    sub2.overlapNodes = copy.deepcopy(sub2.orig_overlap_nodes)
-    sub2.overlapCoords = copy.deepcopy(sub2.orig_overlap_coors)
+    Level2.overlapNodes = copy.deepcopy(Level2.orig_overlap_nodes)
+    Level2.overlapCoords = copy.deepcopy(Level2.orig_overlap_coors)
+    Level3.overlapNodes = copy.deepcopy(Level3.orig_overlap_nodes)
+    Level3.overlapCoords = copy.deepcopy(Level3.orig_overlap_coors)
 
     # Initialize time and record counters
     time_inc = 0
     record_inc = 0
 
     # Get the initial coarse shape functions for correction terms
-    # sub1NcLevel1: (sub1.ne, 8, 8), shape functions connecting sub1 to full
-    # sub1dNcdxLevel1: (sub1.ne, 8, 8)
-    # sub1dNcdyLevel1: (sub1.ne, 8, 8)
-    # sub1dNcdzLevel1: (sub1.ne, 8, 8)
-    # sub1nodesLevel1: (sub1.ne * 8 * 8), indexing into sub1
-    sub1NcLevel1, sub1dNcdxLevel1, sub1dNcdyLevel1,\
-        sub1dNcdzLevel1, sub1nodesLevel1 =\
-        computeCoarseFineShapeFunctions(full.node_coords[0],
-                                        full.node_coords[1],
-                                        full.node_coords[2],
-                                        full.connect[0],
-                                        full.connect[1],
-                                        full.connect[2],
-                                        sub1.node_coords[0],
-                                        sub1.node_coords[1],
-                                        sub1.node_coords[2],
-                                        sub1.connect[0],
-                                        sub1.connect[1],
-                                        sub1.connect[2])
-    # sub2NcLevel1: (sub2.ne, 8, 8), shape functions connecting sub2 to full
-    # sub2dNcdxLevel1: (sub2.ne, 8, 8)
-    # sub2dNcdyLevel1: (sub2.ne, 8, 8)
-    # sub2dNcdzLevel1: (sub2.ne, 8, 8)
-    # sub2nodesLevel1: (sub2.ne * 8 * 8), indexing into sub2
-    sub2NcLevel1, sub2dNcdxLevel1, sub2dNcdyLevel1,\
-        sub2dNcdzLevel1, sub2nodesLevel1 =\
-        computeCoarseFineShapeFunctions(full.node_coords[0],
-                                        full.node_coords[1],
-                                        full.node_coords[2],
-                                        full.connect[0],
-                                        full.connect[1],
-                                        full.connect[2],
-                                        sub2.node_coords[0],
-                                        sub2.node_coords[1],
-                                        sub2.node_coords[2],
-                                        sub2.connect[0],
-                                        sub2.connect[1],
-                                        sub2.connect[2])
+    # Level2NcLevel1: (Level2.ne, 8, 8), shape functions connecting Level2 to Level1
+    # Level2dNcdxLevel1: (Level2.ne, 8, 8)
+    # Level2dNcdyLevel1: (Level2.ne, 8, 8)
+    # Level2dNcdzLevel1: (Level2.ne, 8, 8)
+    # Level2nodesLevel1: (Level2.ne * 8 * 8), indexing into Level2
+    Level2NcLevel1, Level2dNcdxLevel1, Level2dNcdyLevel1,\
+        Level2dNcdzLevel1, Level2nodesLevel1 =\
+        computeCoarseFineShapeFunctions(Level1.node_coords[0],
+                                        Level1.node_coords[1],
+                                        Level1.node_coords[2],
+                                        Level1.connect[0],
+                                        Level1.connect[1],
+                                        Level1.connect[2],
+                                        Level2.node_coords[0],
+                                        Level2.node_coords[1],
+                                        Level2.node_coords[2],
+                                        Level2.connect[0],
+                                        Level2.connect[1],
+                                        Level2.connect[2])
+    # Level3NcLevel1: (Level3.ne, 8, 8), shape functions connecting Level3 to Level1
+    # Level3dNcdxLevel1: (Level3.ne, 8, 8)
+    # Level3dNcdyLevel1: (Level3.ne, 8, 8)
+    # Level3dNcdzLevel1: (Level3.ne, 8, 8)
+    # Level3nodesLevel1: (Level3.ne * 8 * 8), indexing into Level3
+    Level3NcLevel1, Level3dNcdxLevel1, Level3dNcdyLevel1,\
+        Level3dNcdzLevel1, Level3nodesLevel1 =\
+        computeCoarseFineShapeFunctions(Level1.node_coords[0],
+                                        Level1.node_coords[1],
+                                        Level1.node_coords[2],
+                                        Level1.connect[0],
+                                        Level1.connect[1],
+                                        Level1.connect[2],
+                                        Level3.node_coords[0],
+                                        Level3.node_coords[1],
+                                        Level3.node_coords[2],
+                                        Level3.connect[0],
+                                        Level3.connect[1],
+                                        Level3.connect[2])
 
-    # sub2NcLevel2: (sub2.ne, 8, 8), shape functions connecting sub2 to sub1
-    # sub2dNcdxLevel2: (sub2.ne, 8, 8)
-    # sub2dNcdyLevel2: (sub2.ne, 8, 8)
-    # sub2dNcdzLevel2: (sub2.ne, 8, 8)
-    # sub2nodesLevel2: (sub2.ne * 8 * 8), indexing into sub2
-    sub2NcLevel2, sub2dNcdxLevel2, sub2dNcdyLevel2,\
-        sub2dNcdzLevel2, sub2nodesLevel2 =\
-        computeCoarseFineShapeFunctions(sub1.node_coords[0],
-                                        sub1.node_coords[1],
-                                        sub1.node_coords[2],
-                                        sub1.connect[0],
-                                        sub1.connect[1],
-                                        sub1.connect[2],
-                                        sub2.node_coords[0],
-                                        sub2.node_coords[1],
-                                        sub2.node_coords[2],
-                                        sub2.connect[0],
-                                        sub2.connect[1],
-                                        sub2.connect[2])
+    # Level3NcLevel2: (Level3.ne, 8, 8), shape functions connecting Level3 to Level2
+    # Level3dNcdxLevel2: (Level3.ne, 8, 8)
+    # Level3dNcdyLevel2: (Level3.ne, 8, 8)
+    # Level3dNcdzLevel2: (Level3.ne, 8, 8)
+    # Level3nodesLevel2: (Level3.ne * 8 * 8), indexing into Level3
+    Level3NcLevel2, Level3dNcdxLevel2, Level3dNcdyLevel2,\
+        Level3dNcdzLevel2, Level3nodesLevel2 =\
+        computeCoarseFineShapeFunctions(Level2.node_coords[0],
+                                        Level2.node_coords[1],
+                                        Level2.node_coords[2],
+                                        Level2.connect[0],
+                                        Level2.connect[1],
+                                        Level2.connect[2],
+                                        Level3.node_coords[0],
+                                        Level3.node_coords[1],
+                                        Level3.node_coords[2],
+                                        Level3.connect[0],
+                                        Level3.connect[1],
+                                        Level3.connect[2])
     
     # Get the interpolation matrices
-    # fullsub1_intmat: (sub1.nn, 8), from full to sub1
-    # fullsub1_node: (sub1.nn, 8), nodes indexing into full
-    fullsub1_intmat, fullsub1_node = interpolatePointsMatrix(
-                                            full.node_coords[0],
-                                            full.node_coords[1],
-                                            full.node_coords[2],
-                                            full.connect[0],
-                                            full.connect[1],
-                                            full.connect[2],
-                                            sub1.node_coords[0],
-                                            sub1.node_coords[1],
-                                            sub1.node_coords[2])
-    # sub1sub2_intmat: (sub2.nn, 8), from sub1 to sub2
-    # sub1sub2_node: (sub2.nn, 8), nodes indexing into sub1
-    sub1sub2_intmat, sub1sub2_node = interpolatePointsMatrix(
-                                            sub1.node_coords[0],
-                                            sub1.node_coords[1],
-                                            sub1.node_coords[2],
-                                            sub1.connect[0],
-                                            sub1.connect[1],
-                                            sub1.connect[2],
-                                            sub2.node_coords[0],
-                                            sub2.node_coords[1],
-                                            sub2.node_coords[2])
-    # sub1full_intmat: (full.nn, 8), from sub1 to full
-    # sub1full_node: (full.nn, 8), nodes indexing into sub1
-    sub1full_intmat, sub1full_node = interpolatePointsMatrix(
-                                            sub1.node_coords[0],
-                                            sub1.node_coords[1],
-                                            sub1.node_coords[2],
-                                            sub1.connect[0],
-                                            sub1.connect[1],
-                                            sub1.connect[2],
-                                            full.node_coords[0],
-                                            full.node_coords[1],
-                                            full.node_coords[2])
-    # sub2sub1_intmat: (sub1.nn, 8), from sub2 to sub1
-    # sub2sub1_node: (sub1.nn, 8), nodes indexing into sub2
-    sub2sub1_intmat, sub2sub1_node = interpolatePointsMatrix(
-                                            sub2.node_coords[0],
-                                            sub2.node_coords[1],
-                                            sub2.node_coords[2],
-                                            sub2.connect[0],
-                                            sub2.connect[1],
-                                            sub2.connect[2],
-                                            sub1.node_coords[0],
-                                            sub1.node_coords[1],
-                                            sub1.node_coords[2])
+    # Level1Level2_intmat: (Level2.nn, 8), from Level1 to Level2
+    # Level1Level2_node: (Level2.nn, 8), nodes indexing into Level1
+    Level1Level2_intmat, Level1Level2_node = interpolatePointsMatrix(
+                                            Level1.node_coords[0],
+                                            Level1.node_coords[1],
+                                            Level1.node_coords[2],
+                                            Level1.connect[0],
+                                            Level1.connect[1],
+                                            Level1.connect[2],
+                                            Level2.node_coords[0],
+                                            Level2.node_coords[1],
+                                            Level2.node_coords[2])
+    # Level2Level3_intmat: (Level3.nn, 8), from Level2 to Level3
+    # Level2Level3_node: (Level3.nn, 8), nodes indexing into Level2
+    Level2Level3_intmat, Level2Level3_node = interpolatePointsMatrix(
+                                            Level2.node_coords[0],
+                                            Level2.node_coords[1],
+                                            Level2.node_coords[2],
+                                            Level2.connect[0],
+                                            Level2.connect[1],
+                                            Level2.connect[2],
+                                            Level3.node_coords[0],
+                                            Level3.node_coords[1],
+                                            Level3.node_coords[2])
+    # Level2Level1_intmat: (Level1.nn, 8), from Level2 to Level1
+    # Level2Level1_node: (Level1.nn, 8), nodes indexing into Level2
+    Level2Level1_intmat, Level2Level1_node = interpolatePointsMatrix(
+                                            Level2.node_coords[0],
+                                            Level2.node_coords[1],
+                                            Level2.node_coords[2],
+                                            Level2.connect[0],
+                                            Level2.connect[1],
+                                            Level2.connect[2],
+                                            Level1.node_coords[0],
+                                            Level1.node_coords[1],
+                                            Level1.node_coords[2])
+    # Level3Level2_intmat: (Level2.nn, 8), from Level3 to Level2
+    # Level3Level2_node: (Level2.nn, 8), nodes indexing into Level3
+    Level3Level2_intmat, Level3Level2_node = interpolatePointsMatrix(
+                                            Level3.node_coords[0],
+                                            Level3.node_coords[1],
+                                            Level3.node_coords[2],
+                                            Level3.connect[0],
+                                            Level3.connect[1],
+                                            Level3.connect[2],
+                                            Level2.node_coords[0],
+                                            Level2.node_coords[1],
+                                            Level2.node_coords[2])
 
     ### START OF THE TIME LOOP ###
     record_lab = int(time_inc / record_step) + 1
     if output_files == 1:
-        save_result(full, 'full_', record_lab, save_path)
-        save_result(sub1, 'sub1_', record_lab, save_path)
-        save_result(sub2, 'sub2_', record_lab, save_path)
+        save_result(Level1, 'Level1_', record_lab, save_path, 2e-3)
+        save_result(Level2, 'Level2_', record_lab, save_path, 1e-3)
+        save_result(Level3, 'Level3_', record_lab, save_path, 0)
 
     _vx, _vy, _vz = 0, 0, 0
 
@@ -323,79 +323,79 @@ def testMultiscale(solver_input: dict):
 
         # Prep LHS to apply Dirichlet BCs
         if v[2] != vprev:
-            full_mask = full.node_coords[2] <= v[2] + 1e-5
-            full_nn = sum(full_mask)
-            full.T = full.T.at[jnp.isnan(full.T)].set(0)
-            tmp_ne = full.elements[0] * full.elements[1] * (full_nn - 1)
+            Level1_mask = Level1.node_coords[2] <= v[2] + 1e-5
+            Level1_nn = sum(Level1_mask)
+            Level1.T = Level1.T.at[jnp.isnan(Level1.T)].set(0)
+            tmp_ne = Level1.elements[0] * Level1.elements[1] * (Level1_nn - 1)
             tmp_ne = tmp_ne.tolist()
-            tmp_nn = (full.nodes[0] * full.nodes[1] * full_nn).tolist()
+            tmp_nn = (Level1.nodes[0] * Level1.nodes[1] * Level1_nn).tolist()
             vprev = v[2]
-            full.idT = jnp.zeros(full.nn)
-            full.idT = full.idT.at[tmp_nn:].set(1) == 1
+            Level1.idT = jnp.zeros(Level1.nn)
+            Level1.idT = Level1.idT.at[tmp_nn:].set(1) == 1
             force_move = True
         if v[0] != vprev1:
             force_move = True
             vprev1 = v[0]
 
-        if ((time_inc % sub2step) == 0) | force_move:
+        if ((time_inc % Level3step) == 0) | force_move:
             force_move = False
-            sub2.node_coords, sub2.overlapNodes, sub2.overlapCoords,\
-            sub2.T0, sub2.Tprime0, vtot,\
-            sub1.node_coords, sub1.overlapNodes, sub1.overlapCoords,\
-            sub1.T0, sub1.Tprime0, sub1NcLevel1, sub1dNcdxLevel1, sub1dNcdyLevel1,\
-            sub1dNcdzLevel1, sub1nodesLevel1, fullsub1_intmat, fullsub1_node,\
-            sub1full_intmat, sub1full_node, sub2NcLevel1, sub2dNcdxLevel1, sub2dNcdyLevel1,\
-            sub2dNcdzLevel1, sub2nodesLevel1,\
-            sub2NcLevel2, sub2dNcdxLevel2, sub2dNcdyLevel2,\
-            sub2dNcdzLevel2, sub2nodesLevel2,\
-            sub1sub2_intmat, sub1sub2_node,\
-            sub2sub1_intmat, sub2sub1_node, _vx, _vy, _vz = moveEverything(v,
+            Level3.node_coords, Level3.overlapNodes, Level3.overlapCoords,\
+            Level3.T0, Level3.Tprime0, vtot,\
+            Level2.node_coords, Level2.overlapNodes, Level2.overlapCoords,\
+            Level2.T0, Level2.Tprime0, Level2NcLevel1, Level2dNcdxLevel1, Level2dNcdyLevel1,\
+            Level2dNcdzLevel1, Level2nodesLevel1, Level1Level2_intmat, Level1Level2_node,\
+            Level2Level1_intmat, Level2Level1_node, Level3NcLevel1, Level3dNcdxLevel1, Level3dNcdyLevel1,\
+            Level3dNcdzLevel1, Level3nodesLevel1,\
+            Level3NcLevel2, Level3dNcdxLevel2, Level3dNcdyLevel2,\
+            Level3dNcdzLevel2, Level3nodesLevel2,\
+            Level2Level3_intmat, Level2Level3_node,\
+            Level3Level2_intmat, Level3Level2_node, _vx, _vy, _vz = moveEverything(v,
                                                             vstart,
-                                                            sub2.node_coords,
-                                                            sub2.connect,
-                                                            sub2.init_node_coors,
-                                                            sub2.orig_overlap_nodes,
-                                                            sub2.orig_overlap_coors,
-                                                            sub2.bounds.ix,
-                                                            sub2.bounds.iy,
-                                                            sub2.bounds.iz,
-                                                            sub2.Tprime0,
-                                                            sub1.node_coords,
-                                                            sub1.connect,
-                                                            sub1.h,
-                                                            sub1.Tprime0,
-                                                            full.node_coords,
-                                                            full.connect,
-                                                            full.T0,
-                                                            sub1.init_node_coors,
-                                                            sub1.orig_overlap_nodes,
-                                                            sub1.orig_overlap_coors,
-                                                            sub1.bounds.ix,
-                                                            sub1.bounds.iy,
-                                                            sub1.bounds.iz,
-                                                            full.h,
+                                                            Level3.node_coords,
+                                                            Level3.connect,
+                                                            Level3.init_node_coors,
+                                                            Level3.orig_overlap_nodes,
+                                                            Level3.orig_overlap_coors,
+                                                            Level3.bounds.ix,
+                                                            Level3.bounds.iy,
+                                                            Level3.bounds.iz,
+                                                            Level3.Tprime0,
+                                                            Level2.node_coords,
+                                                            Level2.connect,
+                                                            Level2.h,
+                                                            Level2.Tprime0,
+                                                            Level1.node_coords,
+                                                            Level1.connect,
+                                                            Level1.T0,
+                                                            Level2.init_node_coors,
+                                                            Level2.orig_overlap_nodes,
+                                                            Level2.orig_overlap_coors,
+                                                            Level2.bounds.ix,
+                                                            Level2.bounds.iy,
+                                                            Level2.bounds.iz,
+                                                            Level1.h,
                                                             _vx,
                                                             _vy,
                                                             _vz)
 
         if explicit:
-            sub2.T0, sub1.T0, full.T0, sub2.Tprime0, sub1.Tprime0 = doExplicitTimestep(
-                sub2.node_coords, sub2.connect, sub2.ne, sub2.overlapCoords, sub2.overlapNodes,
-                sub1.node_coords, sub1.connect, sub1.ne, sub1.nodes, sub1.overlapCoords, sub1.overlapNodes,
-                full.node_coords, full.connect, full.nodes, full.conditions.x, full.conditions.y, full.conditions.z,
-                sub2.widx, sub2.eidx, sub2.sidx, sub2.nidx, sub2.bidx, sub2.nidx,
-                sub1.widx, sub1.eidx, sub1.sidx, sub1.nidx, sub1.bidx, sub1.nidx,
-                full.widx, full.eidx, full.sidx, full.nidx, full.bidx, full.nidx,
+            Level3.T0, Level2.T0, Level1.T0, Level3.Tprime0, Level2.Tprime0 = doExplicitTimestep(
+                Level3.node_coords, Level3.connect, Level3.ne, Level3.overlapCoords, Level3.overlapNodes,
+                Level2.node_coords, Level2.connect, Level2.ne, Level2.nodes, Level2.overlapCoords, Level2.overlapNodes,
+                Level1.node_coords, Level1.connect, Level1.nodes, Level1.conditions.x, Level1.conditions.y, Level1.conditions.z,
+                Level3.widx, Level3.eidx, Level3.sidx, Level3.nidx, Level3.bidx, Level3.nidx,
+                Level2.widx, Level2.eidx, Level2.sidx, Level2.nidx, Level2.bidx, Level2.nidx,
+                Level1.widx, Level1.eidx, Level1.sidx, Level1.nidx, Level1.bidx, Level1.nidx,
                 tmp_ne, tmp_nn,
-                full.nn, sub1.nn, sub2.nn,
-                sub2.Tprime0, sub1.Tprime0,
-                sub2.T0, sub1.T0, full.T0,
-                sub2NcLevel1, sub2NcLevel2, sub1NcLevel1,
-                sub2dNcdxLevel1, sub2dNcdyLevel1, sub2dNcdzLevel1, sub2nodesLevel1,
-                sub2dNcdxLevel2, sub2dNcdyLevel2, sub2dNcdzLevel2, sub2nodesLevel2,
-                sub1dNcdxLevel1, sub1dNcdyLevel1, sub1dNcdzLevel1, sub1nodesLevel1,
-                sub1sub2_intmat, sub1sub2_node, sub2sub1_intmat, sub2sub1_node,
-                fullsub1_intmat, fullsub1_node, sub1full_intmat, sub1full_node,
+                Level1.nn, Level2.nn, Level3.nn,
+                Level3.Tprime0, Level2.Tprime0,
+                Level3.T0, Level2.T0, Level1.T0,
+                Level3NcLevel1, Level3NcLevel2, Level2NcLevel1,
+                Level3dNcdxLevel1, Level3dNcdyLevel1, Level3dNcdzLevel1, Level3nodesLevel1,
+                Level3dNcdxLevel2, Level3dNcdyLevel2, Level3dNcdzLevel2, Level3nodesLevel2,
+                Level2dNcdxLevel1, Level2dNcdyLevel1, Level2dNcdzLevel1, Level2nodesLevel1,
+                Level2Level3_intmat, Level2Level3_node, Level3Level2_intmat, Level3Level2_node,
+                Level1Level2_intmat, Level1Level2_node, Level2Level1_intmat, Level2Level1_node,
                 _t, v, k, rho, cp, dt, laser_r, laser_d, laser_P, laser_eta,
                 T_amb, h_conv, vareps)
             # Update parameters
@@ -406,10 +406,10 @@ def testMultiscale(solver_input: dict):
             record_inc = 0
             record_lab = int(time_inc / record_step) + 1
             if output_files == 1:
-                if np.mod(record_lab,full_record_inc)==0:
-                    save_result(full, 'full_', record_lab, save_path)
-                save_result(sub1, 'sub1_', record_lab, save_path)
-                save_result(sub2, 'sub2_', record_lab, save_path)
+                if np.mod(record_lab,Level1_record_inc)==0:
+                    save_result(Level1, 'Level1_', record_lab, save_path, 2e-3)
+                save_result(Level2, 'Level2_', record_lab, save_path, 1e-3)
+                save_result(Level3, 'Level3_', record_lab, save_path, 0)
 
         tend = time.time()
         if save_time:
@@ -421,5 +421,5 @@ def testMultiscale(solver_input: dict):
                                                              1000*(tend - tstart_loop)))
     if save_time:
         timing_file.close()
-    print('full.T0.max: %f' % (full.T0.max()))
+    print('Level1.T0.max: %f' % (Level1.T0.max()))
     tool_path_file.close()

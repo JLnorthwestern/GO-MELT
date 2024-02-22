@@ -320,10 +320,10 @@ def computeSources(xf, yf, zf, cfx, cfy, cfz,
         :param cfx, cfy, cfz: connectivity matrix
         :param _t: current time
         :param v: current position of laser (from reading file)
-        :param Nc1: sub2NcLevel1, shape functions between Level 3 and Level 1 (symmetric)
-        :param nc2: sub2NcLevel2, shape functions between Level 3 and Level 2 (symmetric)
-        :param nodes1: sub2nodesLevel1, node indices in Level3 for shape functions Level1
-        :param nodes2: sub2nodesLevel2, node indices in Level3 for shape functions Level2
+        :param Nc1: Level3NcLevel1, shape functions between Level 3 and Level 1 (symmetric)
+        :param nc2: Level3NcLevel2, shape functions between Level 3 and Level 2 (symmetric)
+        :param nodes1: Level3nodesLevel1, node indices in Level3 for shape functions Level1
+        :param nodes2: Level3nodesLevel2, node indices in Level3 for shape functions Level2
         :param nn1, nn2, nn3: total number of nodes (active and deactive)
         :param laserr: laser radius
         :param laserd: laser depth of penetration
@@ -720,10 +720,10 @@ def computeCoarseFineShapeFunctions(xnc_x, xnc_y, xnc_z,
     return Nc, dNcdx, dNcdy, dNcdz, test
     
 @partial(jax.jit, static_argnames=['nn1','nn2'])
-def computeCoarseTprimeMassTerm_jax(xnf_x, xnf_y, xnf_z, # sub2
-                                xnm_x, xnm_y, xnm_z, # sub1
-                                nconnf_x, nconnf_y, nconnf_z, # sub2
-                                nconnm_x, nconnm_y, nconnm_z, # sub1
+def computeCoarseTprimeMassTerm_jax(xnf_x, xnf_y, xnf_z, # Level3
+                                xnm_x, xnm_y, xnm_z, # Level2
+                                nconnf_x, nconnf_y, nconnf_z, # Level3
+                                nconnm_x, nconnm_y, nconnm_z, # Level2
                                 Tprimef, Tprimef0,
                                 Tprimem, Tprimem0,
                                 rho, cp, dt,
@@ -784,15 +784,15 @@ def computeCoarseTprimeMassTerm_jax(xnf_x, xnf_y, xnf_z, # sub2
     return Vcu, Vmu
 
 @partial(jax.jit, static_argnames=['nn1','nn2'])
-def computeCoarseTprimeTerm_jax(xnf_x, xnf_y, xnf_z, # sub2
-                                xnm_x, xnm_y, xnm_z, # sub1
-                                nconnf_x, nconnf_y, nconnf_z, # sub2
-                                nconnm_x, nconnm_y, nconnm_z, # sub1
-                                Tprimef, Tprimem, # sub2, sub1
+def computeCoarseTprimeTerm_jax(xnf_x, xnf_y, xnf_z, # Level3
+                                xnm_x, xnm_y, xnm_z, # Level2
+                                nconnf_x, nconnf_y, nconnf_z, # Level3
+                                nconnm_x, nconnm_y, nconnm_z, # Level2
+                                Tprimef, Tprimem, # Level3, Level2
                                 k,
-                                dNc31dx, dNc31dy, dNc31dz, nodes31, # sub2 Level1
-                                dNc21dx, dNc21dy, dNc21dz, nodes21, # sub1 Level1
-                                dNc32dx, dNc32dy, dNc32dz, nodes32, # sub2 Level2
+                                dNc31dx, dNc31dy, dNc31dz, nodes31, # Level3 Level1
+                                dNc21dx, dNc21dy, dNc21dz, nodes21, # Level2 Level1
+                                dNc32dx, dNc32dy, dNc32dz, nodes32, # Level3 Level2
                                 nn1, nn2):
     # Level 3
     nef_x = nconnf_x.shape[0]
@@ -950,14 +950,14 @@ def substitute_Tbar(Tbar, _idx, _val):
 def substitute_Tbar2(Tbar, _idx, _val):
     return Tbar.at[_idx].set(_val)
 
-def find_max_const(full, sub):
-    # Used to find the maximum number of elements the subdomain can move
-    iE = full.bounds.x[1] - sub.bounds.x[1] # Number of elements to east
-    iN = full.bounds.y[1] - sub.bounds.y[1] # Number of elements to north
-    iT = full.bounds.z[1] - sub.bounds.z[1] # Number of elements to top
-    iW = full.bounds.x[0] - sub.bounds.x[0] # Number of elements to west
-    iS = full.bounds.y[0] - sub.bounds.y[0] # Number of elements to south
-    iB = full.bounds.z[0] - sub.bounds.z[0] # Number of elements to bottom
+def find_max_const(CoarseLevel, FinerLevel):
+    # Used to find the maximum number of elements the finer level domain can move
+    iE = CoarseLevel.bounds.x[1] - FinerLevel.bounds.x[1] # Number of elements to east
+    iN = CoarseLevel.bounds.y[1] - FinerLevel.bounds.y[1] # Number of elements to north
+    iT = CoarseLevel.bounds.z[1] - FinerLevel.bounds.z[1] # Number of elements to top
+    iW = CoarseLevel.bounds.x[0] - FinerLevel.bounds.x[0] # Number of elements to west
+    iS = CoarseLevel.bounds.y[0] - FinerLevel.bounds.y[0] # Number of elements to south
+    iB = CoarseLevel.bounds.z[0] - FinerLevel.bounds.z[0] # Number of elements to bottom
     return [iW, iE], [iS, iN], [iB, iT]
 
 def calc_length_h(A):
@@ -971,13 +971,23 @@ def calc_length_h(A):
     hz = Lz / A.elements[2]
     return [Lx, Ly, Lz], [hx, hy, hz]
 
-def save_result(full, save_str, record_lab, save_path):
-    vtkcx = np.array(full.node_coords[0])
-    vtkcy = np.array(full.node_coords[1])
-    vtkcz = np.array(full.node_coords[2])
-    vtkT = np.array(full.T0.reshape(full.nodes[2],
-                                    full.nodes[1],
-                                    full.nodes[0])).transpose((2,1,0))
+def save_result(Level, save_str, record_lab, save_path, zoffset):
+    """ save_result saves a vtk for the current level's temperature field
+        :param Level: structure of Level
+        :param save_str: prefix of save string
+        :param record_lab: recording label that is incremented after each save
+        :param save_path: folder where file is saved
+        :param zoffset: used for rendering purposes, no effect on model itself
+    """
+    # List coordinates in each direction for structured save
+    vtkcx = np.array(Level.node_coords[0])
+    vtkcy = np.array(Level.node_coords[1])
+    vtkcz = np.array(Level.node_coords[2]-zoffset)
+    # Reshape the temperature field for correct rendering later
+    vtkT = np.array(Level.T0.reshape(Level.nodes[2],
+                                    Level.nodes[1],
+                                    Level.nodes[0])).transpose((2,1,0))
+    # Save a vtr
     gridToVTK(save_path+save_str+str(record_lab).zfill(8),
             vtkcx, vtkcy, vtkcz, pointData = {"Temperature (K)" : vtkT})
 
@@ -985,8 +995,8 @@ def save_result(full, save_str, record_lab, save_path):
 def getNewTprime(lnc0, lnc1, lnc2, lcon0, lcon1, lcon2, lT0, 
                  lov0, lov1, lov2, lovn0, lovn1, lovn2, uT,
                  un0, un1, ulmat, ulnode, lumat, lunode):
-    # l: lower (e.g. Level3, sub2)
-    # u: upper (e.g. Level2, sub1)
+    # l: lower (e.g. Level3, Level3)
+    # u: upper (e.g. Level2, Level2)
     # nc: node_coords
     # con: connect
     # ov: overlapCoords
@@ -1022,60 +1032,60 @@ def getBothNewTprimes(lnc0, lnc1, lnc2, lcon0, lcon1, lcon2, lT0,
                  un0, un1, ummat, umnode, mumat, munode)
     return lTprime, mTprime, mT0, uT0
 
-@partial(jax.jit, static_argnames=['fullnn','fulltmpne','fulltmpnn',
-                                   'sub1nn','sub1ne', 'sub2nn', 'sub2ne'])
-def computeSolutions(fullnc0, fullnc1, fullnc2,
-                     fullcon0, fullcon1, fullcon2,
-                     fullnn, fulltmpne, fulltmpnn, fullT0, fullF, fullV,
-                     fullx0, fullx1, fully0, fully1, fullz0, fullz1,
-                     fullwi, fullei, fullsi, fullni, fullbi, fullti,
-                     fullsub1_intmat, fullsub1_node,
-                     sub1nc0, sub1nc1, sub1nc2,
-                     sub1con0, sub1con1, sub1con2,
-                     sub1nn, sub1ne, sub1T0, sub1F, sub1V,
-                     sub1wi, sub1ei, sub1si, sub1ni, sub1bi, sub1ti,
-                     sub1sub2_intmat, sub1sub2_node,
-                     sub2nc0, sub2nc1, sub2nc2,
-                     sub2con0, sub2con1, sub2con2,
-                     sub2nn, sub2ne, sub2T0, sub2F,
-                     sub2wi, sub2ei, sub2si, sub2ni, sub2bi, sub2ti,
+@partial(jax.jit, static_argnames=['Level1nn','Level1tmpne','Level1tmpnn',
+                                   'Level2nn','Level2ne', 'Level3nn', 'Level3ne'])
+def computeSolutions(Level1nc0, Level1nc1, Level1nc2,
+                     Level1con0, Level1con1, Level1con2,
+                     Level1nn, Level1tmpne, Level1tmpnn, Level1T0, Level1F, Level1V,
+                     Level1x0, Level1x1, Level1y0, Level1y1, Level1z0, Level1z1,
+                     Level1wi, Level1ei, Level1si, Level1ni, Level1bi, Level1ti,
+                     Level1Level2_intmat, Level1Level2_node,
+                     Level2nc0, Level2nc1, Level2nc2,
+                     Level2con0, Level2con1, Level2con2,
+                     Level2nn, Level2ne, Level2T0, Level2F, Level2V,
+                     Level2wi, Level2ei, Level2si, Level2ni, Level2bi, Level2ti,
+                     Level2Level3_intmat, Level2Level3_node,
+                     Level3nc0, Level3nc1, Level3nc2,
+                     Level3con0, Level3con1, Level3con2,
+                     Level3nn, Level3ne, Level3T0, Level3F,
+                     Level3wi, Level3ei, Level3si, Level3ni, Level3bi, Level3ti,
                      k, rho, cp, dt, T_amb):
-    fullT = meshlessKM(fullnc0, fullnc1, fullnc2,
-                    fullcon0, fullcon1, fullcon2,
-                    fullnn, fulltmpne,
-                    k, rho, cp, dt, fullT0, fullF, fullV)
-    fullT = substitute_Tbar(fullT, fulltmpnn, T_amb)
-    FinalFull = assignBCs(fullT, fully0, fully1,
-                       fullx0, fullx1,
-                       fullz0, fullz1,
-                       fullwi, fullei,
-                       fullsi, fullni,
-                       fullbi, fullti)
+    Level1T = meshlessKM(Level1nc0, Level1nc1, Level1nc2,
+                    Level1con0, Level1con1, Level1con2,
+                    Level1nn, Level1tmpne,
+                    k, rho, cp, dt, Level1T0, Level1F, Level1V)
+    Level1T = substitute_Tbar(Level1T, Level1tmpnn, T_amb)
+    FinalLevel1 = assignBCs(Level1T, Level1y0, Level1y1,
+                       Level1x0, Level1x1,
+                       Level1z0, Level1z1,
+                       Level1wi, Level1ei,
+                       Level1si, Level1ni,
+                       Level1bi, Level1ti)
 
     # Compute source term for medium scale problem using fine mesh
-    TfAll = interpolate_w_matrix(fullsub1_intmat, fullsub1_node, FinalFull)
+    TfAll = interpolate_w_matrix(Level1Level2_intmat, Level1Level2_node, FinalLevel1)
     # Avoids assembling LHS matrix
-    sub1T = meshlessKM(sub1nc0, sub1nc1, sub1nc2,
-                    sub1con0, sub1con1, sub1con2,
-                    sub1nn, sub1ne,
-                    k, rho, cp, dt, sub1T0, sub1F, sub1V)
-    FinalSub1 = assignBCsFine(sub1T, TfAll,
-                        sub1wi, sub1ei,
-                        sub1si, sub1ni,
-                        sub1bi, sub1ti)
+    Level2T = meshlessKM(Level2nc0, Level2nc1, Level2nc2,
+                    Level2con0, Level2con1, Level2con2,
+                    Level2nn, Level2ne,
+                    k, rho, cp, dt, Level2T0, Level2F, Level2V)
+    FinalLevel2 = assignBCsFine(Level2T, TfAll,
+                        Level2wi, Level2ei,
+                        Level2si, Level2ni,
+                        Level2bi, Level2ti)
 
-    # Use sub1.T to get Dirichlet BCs for fine-scale solution
-    TfAll = interpolate_w_matrix(sub1sub2_intmat, sub1sub2_node, FinalSub1)
-    FinalSub2 = meshlessKM(sub2nc0, sub2nc1, sub2nc2,
-                    sub2con0, sub2con1, sub2con2,
-                    sub2nn, sub2ne,
-                    k, rho, cp, dt, sub2T0, sub2F, 0)
-    FinalSub2 = assignBCsFine(FinalSub2,
+    # Use Level2.T to get Dirichlet BCs for fine-scale solution
+    TfAll = interpolate_w_matrix(Level2Level3_intmat, Level2Level3_node, FinalLevel2)
+    FinalLevel3 = meshlessKM(Level3nc0, Level3nc1, Level3nc2,
+                    Level3con0, Level3con1, Level3con2,
+                    Level3nn, Level3ne,
+                    k, rho, cp, dt, Level3T0, Level3F, 0)
+    FinalLevel3 = assignBCsFine(FinalLevel3,
                             TfAll,
-                            sub2wi, sub2ei,
-                            sub2si, sub2ni,
-                            sub2bi, sub2ti)
-    return FinalFull, FinalSub1, FinalSub2
+                            Level3wi, Level3ei,
+                            Level3si, Level3ni,
+                            Level3bi, Level3ti)
+    return FinalLevel1, FinalLevel2, FinalLevel3
 
 @partial(jax.jit, static_argnames=['ne','nn'])
 def computeConvectionRadiation(xyz, c, T, ne, nn, T_amb, h_conv, sigma_sb, emissivity, F):
@@ -1115,25 +1125,25 @@ def computeConvectionRadiation(xyz, c, T, ne, nn, T_amb, h_conv, sigma_sb, emiss
     # Returns k grad(T) integral, which is Neumann BC (expect ambient < body)
     return F + NeumannBC
 
-@partial(jax.jit, static_argnames=['nn1','nn2','nn3','tmp_ne','tmp_nn','sub1ne','sub2ne'])
-def doExplicitTimestep(sub2nc, sub2con, sub2ne, sub2oC, sub2oN,
-                       sub1nc, sub1con, sub1ne, sub1no, sub1oC, sub1oN,
-                       fullnc, fullcon, fullno, fullcondx, fullcondy, fullcondz,
-                       sub2widx, sub2eidx, sub2sidx, sub2nidx, sub2bidx, sub2tidx,
-                       sub1widx, sub1eidx, sub1sidx, sub1nidx, sub1bidx, sub1tidx,
-                       fullwidx, fulleidx, fullsidx, fullnidx, fullbidx, fulltidx,
+@partial(jax.jit, static_argnames=['nn1','nn2','nn3','tmp_ne','tmp_nn','Level2ne','Level3ne'])
+def doExplicitTimestep(Level3nc, Level3con, Level3ne, Level3oC, Level3oN,
+                       Level2nc, Level2con, Level2ne, Level2no, Level2oC, Level2oN,
+                       Level1nc, Level1con, Level1no, Level1condx, Level1condy, Level1condz,
+                       Level3widx, Level3eidx, Level3sidx, Level3nidx, Level3bidx, Level3tidx,
+                       Level2widx, Level2eidx, Level2sidx, Level2nidx, Level2bidx, Level2tidx,
+                       Level1widx, Level1eidx, Level1sidx, Level1nidx, Level1bidx, Level1tidx,
                        tmp_ne, tmp_nn,
                        nn1, nn2, nn3,
-                       sub2Tp0, sub1Tp0,
-                       sub2T0, sub1T0, fullT0,
-                       sub2NcLevel1, sub2NcLevel2, sub1NcLevel1,
-                       sub2dNcdxLevel1, sub2dNcdyLevel1, sub2dNcdzLevel1, sub2nodesLevel1,
-                       sub2dNcdxLevel2, sub2dNcdyLevel2, sub2dNcdzLevel2, sub2nodesLevel2,
-                       sub1dNcdxLevel1, sub1dNcdyLevel1, sub1dNcdzLevel1, sub1nodesLevel1,
-                       sub1sub2_intmat, sub1sub2_node, sub2sub1_intmat, sub2sub1_node,
-                       fullsub1_intmat, fullsub1_node, sub1full_intmat, sub1full_node,
+                       Level3Tp0, Level2Tp0,
+                       Level3T0, Level2T0, Level1T0,
+                       Level3NcLevel1, Level3NcLevel2, Level2NcLevel1,
+                       Level3dNcdxLevel1, Level3dNcdyLevel1, Level3dNcdzLevel1, Level3nodesLevel1,
+                       Level3dNcdxLevel2, Level3dNcdyLevel2, Level3dNcdzLevel2, Level3nodesLevel2,
+                       Level2dNcdxLevel1, Level2dNcdyLevel1, Level2dNcdzLevel1, Level2nodesLevel1,
+                       Level2Level3_intmat, Level2Level3_node, Level3Level2_intmat, Level3Level2_node,
+                       Level1Level2_intmat, Level1Level2_node, Level2Level1_intmat, Level2Level1_node,
                        _t, v, k, rho, cp, dt, laserr, laserd, laserP, lasereta, T_amb, h_conv, vareps):
-    """ doExplicitTimestep computes a full explicit timestep starting by
+    """ doExplicitTimestep computes a Level1 explicit timestep starting by
         computing the source terms for all three levels, computing the convection/radiation
         terms for all three levels, computing the previous step volumetric correction terms,
         computing solutions for all three levels (predictor step), calculating new Tprime terms
@@ -1145,17 +1155,17 @@ def doExplicitTimestep(sub2nc, sub2con, sub2ne, sub2oC, sub2oN,
         :param oC: overlapping coordinates between level and lower level
         :param oN: overlapping nodes between level and lower level
         :param no: number of nodes (in one direction)
-        :param condx, condy, condz: Dirichlet boundary conditions for full mesh
+        :param condx, condy, condz: Dirichlet boundary conditions for Level1 mesh
         :param widx, eidx, sidx...: indices for boundary surface nodes
-        :param tmp_ne, tmp_nn: number of elements and nodes active on full mesh (based on layer)
+        :param tmp_ne, tmp_nn: number of elements and nodes active on Level1 mesh (based on layer)
         :param nn1, nn2, nn3: total number of nodes (active and deactive)
         :param Tp0: previous correction term for Tprime
         :param T0: previous temperature
-        :param sub2NcLevel1: shape functions from sub2 to Level1
-        :param sub2dNcdxLevel1: derivative of shape functions from sub2 to Level1
-        :param sub2nodesLevel1: node indices for sub2 to Level 1 Tprime calculations
-        :param sub1sub2_intmat: interpolation matrix from sub1 to sub2
-        :param sub1sub2_node: nodes indexing into sub1 for interpolation
+        :param Level3NcLevel1: shape functions from Level3 to Level1
+        :param Level3dNcdxLevel1: derivative of shape functions from Level3 to Level1
+        :param Level3nodesLevel1: node indices for Level3 to Level 1 Tprime calculations
+        :param Level2Level3_intmat: interpolation matrix from Level2 to Level3
+        :param Level2Level3_node: nodes indexing into Level2 for interpolation
         :param _t: current time
         :param v: current position of laser (from reading file)
         :param k: thermal conductivity
@@ -1169,24 +1179,24 @@ def doExplicitTimestep(sub2nc, sub2con, sub2ne, sub2oC, sub2oN,
         :param T_amb: ambient temperature
         :param h_conv: convection coefficient
         :param vareps: emissivity coefficient
-        :return sub2T0, sub1T0, fullT0, sub2Tp0, sub1Tp0
-        :return sub2T0: Temperature for Level 3 (assigned back to previous temperature)
-        :return sub1T0: Temperature for Level 2 (assigned back to previous temperature)
-        :return fullT0: Temperature for Level 1 (assigned back to previous temperature)
-        :return sub2Tp0: Temperature correction from Level 3 (assigned to previous)
-        :return sub1Tp0: Temperature correction from Level 2 (assigned to previous)
+        :return Level3T0, Level2T0, Level1T0, Level3Tp0, Level2Tp0
+        :return Level3T0: Temperature for Level 3 (assigned back to previous temperature)
+        :return Level2T0: Temperature for Level 2 (assigned back to previous temperature)
+        :return Level1T0: Temperature for Level 1 (assigned back to previous temperature)
+        :return Level3Tp0: Temperature correction from Level 3 (assigned to previous)
+        :return Level2Tp0: Temperature correction from Level 2 (assigned to previous)
     """
-    Fc, Fm, Ff = computeSources(sub2nc[0],
-                                sub2nc[1],
-                                sub2nc[2],
-                                sub2con[0],
-                                sub2con[1],
-                                sub2con[2],
+    Fc, Fm, Ff = computeSources(Level3nc[0],
+                                Level3nc[1],
+                                Level3nc[2],
+                                Level3con[0],
+                                Level3con[1],
+                                Level3con[2],
                                 _t, v,
-                                sub2NcLevel1,
-                                sub2NcLevel2,
-                                sub2nodesLevel1,
-                                sub2nodesLevel2,
+                                Level3NcLevel1,
+                                Level3NcLevel2,
+                                Level3nodesLevel1,
+                                Level3nodesLevel2,
                                 nn1,
                                 nn2,
                                 nn3,
@@ -1194,599 +1204,599 @@ def doExplicitTimestep(sub2nc, sub2con, sub2ne, sub2oC, sub2oN,
                                 laserd,
                                 laserP,
                                 lasereta)
-    Fc = computeConvectionRadiation(fullnc, fullcon, fullT0, tmp_ne, nn1, T_amb, h_conv, 5.67e-8, vareps, Fc)
-    Fm = computeConvectionRadiation(sub1nc, sub1con, sub1T0, sub1ne, nn2, T_amb, h_conv, 5.67e-8, vareps, Fm)
-    Ff = computeConvectionRadiation(sub2nc, sub2con, sub2T0, sub2ne, nn3, T_amb, h_conv, 5.67e-8, vareps, Ff)
+    Fc = computeConvectionRadiation(Level1nc, Level1con, Level1T0, tmp_ne, nn1, T_amb, h_conv, 5.67e-8, vareps, Fc)
+    Fm = computeConvectionRadiation(Level2nc, Level2con, Level2T0, Level2ne, nn2, T_amb, h_conv, 5.67e-8, vareps, Fm)
+    Ff = computeConvectionRadiation(Level3nc, Level3con, Level3T0, Level3ne, nn3, T_amb, h_conv, 5.67e-8, vareps, Ff)
     Vcu, Vmu = computeCoarseTprimeTerm_jax(
-                        sub2nc[0],
-                        sub2nc[1],
-                        sub2nc[2],
-                        sub1nc[0],
-                        sub1nc[1],
-                        sub1nc[2],
-                        sub2con[0],
-                        sub2con[1],
-                        sub2con[2],
-                        sub1con[0],
-                        sub1con[1],
-                        sub1con[2],
-                        sub2Tp0,
-                        sub1Tp0,
+                        Level3nc[0],
+                        Level3nc[1],
+                        Level3nc[2],
+                        Level2nc[0],
+                        Level2nc[1],
+                        Level2nc[2],
+                        Level3con[0],
+                        Level3con[1],
+                        Level3con[2],
+                        Level2con[0],
+                        Level2con[1],
+                        Level2con[2],
+                        Level3Tp0,
+                        Level2Tp0,
                         k,
-                        sub2dNcdxLevel1, 
-                        sub2dNcdyLevel1,
-                        sub2dNcdzLevel1,
-                        sub2nodesLevel1,
-                        sub1dNcdxLevel1, 
-                        sub1dNcdyLevel1,
-                        sub1dNcdzLevel1,
-                        sub1nodesLevel1,
-                        sub2dNcdxLevel2, 
-                        sub2dNcdyLevel2,
-                        sub2dNcdzLevel2,
-                        sub2nodesLevel2,
+                        Level3dNcdxLevel1, 
+                        Level3dNcdyLevel1,
+                        Level3dNcdzLevel1,
+                        Level3nodesLevel1,
+                        Level2dNcdxLevel1, 
+                        Level2dNcdyLevel1,
+                        Level2dNcdzLevel1,
+                        Level2nodesLevel1,
+                        Level3dNcdxLevel2, 
+                        Level3dNcdyLevel2,
+                        Level3dNcdzLevel2,
+                        Level3nodesLevel2,
                         nn1,
                         nn2)
-    fullT, sub1T, sub2T = computeSolutions(
-                            fullnc[0],
-                            fullnc[1],
-                            fullnc[2],
-                            fullcon[0],
-                            fullcon[1],
-                            fullcon[2],
+    Level1T, Level2T, Level3T = computeSolutions(
+                            Level1nc[0],
+                            Level1nc[1],
+                            Level1nc[2],
+                            Level1con[0],
+                            Level1con[1],
+                            Level1con[2],
                             nn1,
                             tmp_ne,
                             tmp_nn,
-                            fullT0,
+                            Level1T0,
                             Fc,
                             Vcu,
-                            fullcondx[0],
-                            fullcondx[1],
-                            fullcondy[0],
-                            fullcondy[1],
-                            fullcondz[0],
-                            fullcondz[1],
-                            fullwidx,
-                            fulleidx,
-                            fullsidx,
-                            fullnidx,
-                            fullbidx,
-                            fulltidx,
-                            fullsub1_intmat,
-                            fullsub1_node,
-                            sub1nc[0],
-                            sub1nc[1],
-                            sub1nc[2],
-                            sub1con[0],
-                            sub1con[1],
-                            sub1con[2],
+                            Level1condx[0],
+                            Level1condx[1],
+                            Level1condy[0],
+                            Level1condy[1],
+                            Level1condz[0],
+                            Level1condz[1],
+                            Level1widx,
+                            Level1eidx,
+                            Level1sidx,
+                            Level1nidx,
+                            Level1bidx,
+                            Level1tidx,
+                            Level1Level2_intmat,
+                            Level1Level2_node,
+                            Level2nc[0],
+                            Level2nc[1],
+                            Level2nc[2],
+                            Level2con[0],
+                            Level2con[1],
+                            Level2con[2],
                             nn2,
-                            sub1ne,
-                            sub1T0,
+                            Level2ne,
+                            Level2T0,
                             Fm,
                             Vmu,
-                            sub1widx,
-                            sub1eidx,
-                            sub1sidx,
-                            sub1nidx,
-                            sub1bidx,
-                            sub1tidx,
-                            sub1sub2_intmat,
-                            sub1sub2_node,
-                            sub2nc[0],
-                            sub2nc[1],
-                            sub2nc[2],
-                            sub2con[0],
-                            sub2con[1],
-                            sub2con[2],
+                            Level2widx,
+                            Level2eidx,
+                            Level2sidx,
+                            Level2nidx,
+                            Level2bidx,
+                            Level2tidx,
+                            Level2Level3_intmat,
+                            Level2Level3_node,
+                            Level3nc[0],
+                            Level3nc[1],
+                            Level3nc[2],
+                            Level3con[0],
+                            Level3con[1],
+                            Level3con[2],
                             nn3,
-                            sub2ne,
-                            sub2T0,
+                            Level3ne,
+                            Level3T0,
                             Ff,
-                            sub2widx,
-                            sub2eidx,
-                            sub2sidx,
-                            sub2nidx,
-                            sub2bidx,
-                            sub2tidx,
+                            Level3widx,
+                            Level3eidx,
+                            Level3sidx,
+                            Level3nidx,
+                            Level3bidx,
+                            Level3tidx,
                             k, rho, cp, dt, T_amb)
-    sub2Tp, sub1Tp, sub1T, fullT = getBothNewTprimes(
-                            sub2nc[0],
-                            sub2nc[1],
-                            sub2nc[2],
-                            sub2con[0],
-                            sub2con[1],
-                            sub2con[2],
-                            sub2T, 
-                            sub2oC[0],
-                            sub2oC[1],
-                            sub2oC[2],
-                            sub2oN[0],
-                            sub2oN[1],
-                            sub2oN[2],
-                            sub1T,
-                            sub1no[0],
-                            sub1no[1],
-                            sub1sub2_intmat,
-                            sub1sub2_node,
-                            sub2sub1_intmat,
-                            sub2sub1_node,
-                            sub1nc[0],
-                            sub1nc[1],
-                            sub1nc[2],
-                            sub1con[0],
-                            sub1con[1],
-                            sub1con[2],
-                            sub1oC[0],
-                            sub1oC[1],
-                            sub1oC[2],
-                            sub1oN[0],
-                            sub1oN[1],
-                            sub1oN[2],
-                            fullT,
-                            fullno[0],
-                            fullno[1],
-                            fullsub1_intmat,
-                            fullsub1_node,
-                            sub1full_intmat,
-                            sub1full_node)
+    Level3Tp, Level2Tp, Level2T, Level1T = getBothNewTprimes(
+                            Level3nc[0],
+                            Level3nc[1],
+                            Level3nc[2],
+                            Level3con[0],
+                            Level3con[1],
+                            Level3con[2],
+                            Level3T, 
+                            Level3oC[0],
+                            Level3oC[1],
+                            Level3oC[2],
+                            Level3oN[0],
+                            Level3oN[1],
+                            Level3oN[2],
+                            Level2T,
+                            Level2no[0],
+                            Level2no[1],
+                            Level2Level3_intmat,
+                            Level2Level3_node,
+                            Level3Level2_intmat,
+                            Level3Level2_node,
+                            Level2nc[0],
+                            Level2nc[1],
+                            Level2nc[2],
+                            Level2con[0],
+                            Level2con[1],
+                            Level2con[2],
+                            Level2oC[0],
+                            Level2oC[1],
+                            Level2oC[2],
+                            Level2oN[0],
+                            Level2oN[1],
+                            Level2oN[2],
+                            Level1T,
+                            Level1no[0],
+                            Level1no[1],
+                            Level1Level2_intmat,
+                            Level1Level2_node,
+                            Level2Level1_intmat,
+                            Level2Level1_node)
     Vcu, Vmu = computeCoarseTprimeMassTerm_jax(
-        sub2nc[0],
-        sub2nc[1],
-        sub2nc[2],
-        sub1nc[0],
-        sub1nc[1],
-        sub1nc[2],
-        sub2con[0],
-        sub2con[1],
-        sub2con[2],
-        sub1con[0],
-        sub1con[1],
-        sub1con[2],
-        sub2Tp,
-        sub2Tp0,
-        sub1Tp,
-        sub1Tp0,
+        Level3nc[0],
+        Level3nc[1],
+        Level3nc[2],
+        Level2nc[0],
+        Level2nc[1],
+        Level2nc[2],
+        Level3con[0],
+        Level3con[1],
+        Level3con[2],
+        Level2con[0],
+        Level2con[1],
+        Level2con[2],
+        Level3Tp,
+        Level3Tp0,
+        Level2Tp,
+        Level2Tp0,
         rho, cp, dt,
-        sub2NcLevel1,
-        sub1NcLevel1,
-        sub2NcLevel2,
-        sub2nodesLevel1,
-        sub1nodesLevel1,
-        sub2nodesLevel2,
+        Level3NcLevel1,
+        Level2NcLevel1,
+        Level3NcLevel2,
+        Level3nodesLevel1,
+        Level2nodesLevel1,
+        Level3nodesLevel2,
         Vcu,
         Vmu,
         nn1,
         nn2)
-    fullT, sub1T, sub2T0 = computeSolutions(
-        fullnc[0],
-        fullnc[1],
-        fullnc[2],
-        fullcon[0],
-        fullcon[1],
-        fullcon[2],
+    Level1T, Level2T, Level3T0 = computeSolutions(
+        Level1nc[0],
+        Level1nc[1],
+        Level1nc[2],
+        Level1con[0],
+        Level1con[1],
+        Level1con[2],
         nn1,
         tmp_ne,
         tmp_nn,
-        fullT0,
+        Level1T0,
         Fc,
         Vcu,
-        fullcondx[0],
-        fullcondx[1],
-        fullcondy[0],
-        fullcondy[1],
-        fullcondz[0],
-        fullcondz[1],
-        fullwidx,
-        fulleidx,
-        fullsidx,
-        fullnidx,
-        fullbidx,
-        fulltidx,
-        fullsub1_intmat,
-        fullsub1_node,
-        sub1nc[0],
-        sub1nc[1],
-        sub1nc[2],
-        sub1con[0],
-        sub1con[1],
-        sub1con[2],
+        Level1condx[0],
+        Level1condx[1],
+        Level1condy[0],
+        Level1condy[1],
+        Level1condz[0],
+        Level1condz[1],
+        Level1widx,
+        Level1eidx,
+        Level1sidx,
+        Level1nidx,
+        Level1bidx,
+        Level1tidx,
+        Level1Level2_intmat,
+        Level1Level2_node,
+        Level2nc[0],
+        Level2nc[1],
+        Level2nc[2],
+        Level2con[0],
+        Level2con[1],
+        Level2con[2],
         nn2,
-        sub1ne,
-        sub1T0,
+        Level2ne,
+        Level2T0,
         Fm,
         Vmu,
-        sub1widx,
-        sub1eidx,
-        sub1sidx,
-        sub1nidx,
-        sub1bidx,
-        sub1tidx,
-        sub1sub2_intmat,
-        sub1sub2_node,
-        sub2nc[0],
-        sub2nc[1],
-        sub2nc[2],
-        sub2con[0],
-        sub2con[1],
-        sub2con[2],
+        Level2widx,
+        Level2eidx,
+        Level2sidx,
+        Level2nidx,
+        Level2bidx,
+        Level2tidx,
+        Level2Level3_intmat,
+        Level2Level3_node,
+        Level3nc[0],
+        Level3nc[1],
+        Level3nc[2],
+        Level3con[0],
+        Level3con[1],
+        Level3con[2],
         nn3,
-        sub2ne,
-        sub2T0,
+        Level3ne,
+        Level3T0,
         Ff,
-        sub2widx,
-        sub2eidx,
-        sub2sidx,
-        sub2nidx,
-        sub2bidx,
-        sub2tidx,
+        Level3widx,
+        Level3eidx,
+        Level3sidx,
+        Level3nidx,
+        Level3bidx,
+        Level3tidx,
         k, rho, cp, dt, T_amb)
-    sub2Tp0, sub1Tp0, sub1T0, fullT0 = getBothNewTprimes(
-            sub2nc[0],
-            sub2nc[1],
-            sub2nc[2],
-            sub2con[0],
-            sub2con[1],
-            sub2con[2],
-            sub2T0, 
-            sub2oC[0],
-            sub2oC[1],
-            sub2oC[2],
-            sub2oN[0],
-            sub2oN[1],
-            sub2oN[2],
-            sub1T,
-            sub1no[0],
-            sub1no[1],
-            sub1sub2_intmat,
-            sub1sub2_node,
-            sub2sub1_intmat,
-            sub2sub1_node,
-            sub1nc[0],
-            sub1nc[1],
-            sub1nc[2],
-            sub1con[0],
-            sub1con[1],
-            sub1con[2],
-            sub1oC[0],
-            sub1oC[1],
-            sub1oC[2],
-            sub1oN[0],
-            sub1oN[1],
-            sub1oN[2],
-            fullT,
-            fullno[0],
-            fullno[1],
-            fullsub1_intmat,
-            fullsub1_node,
-            sub1full_intmat,
-            sub1full_node)
-    return sub2T0, sub1T0, fullT0, sub2Tp0, sub1Tp0
+    Level3Tp0, Level2Tp0, Level2T0, Level1T0 = getBothNewTprimes(
+            Level3nc[0],
+            Level3nc[1],
+            Level3nc[2],
+            Level3con[0],
+            Level3con[1],
+            Level3con[2],
+            Level3T0, 
+            Level3oC[0],
+            Level3oC[1],
+            Level3oC[2],
+            Level3oN[0],
+            Level3oN[1],
+            Level3oN[2],
+            Level2T,
+            Level2no[0],
+            Level2no[1],
+            Level2Level3_intmat,
+            Level2Level3_node,
+            Level3Level2_intmat,
+            Level3Level2_node,
+            Level2nc[0],
+            Level2nc[1],
+            Level2nc[2],
+            Level2con[0],
+            Level2con[1],
+            Level2con[2],
+            Level2oC[0],
+            Level2oC[1],
+            Level2oC[2],
+            Level2oN[0],
+            Level2oN[1],
+            Level2oN[2],
+            Level1T,
+            Level1no[0],
+            Level1no[1],
+            Level1Level2_intmat,
+            Level1Level2_node,
+            Level2Level1_intmat,
+            Level2Level1_node)
+    return Level3T0, Level2T0, Level1T0, Level3Tp0, Level2Tp0
 
 @jax.jit
-def moveSub2Mesh(v, vstart,
-             sub2pnc, sub2con, sub2inc, sub2ooN, sub2ooC,
-             sub2bx, sub2by, sub2bz, sub2Tp0,
-             sub1nc, sub1con, sub1h, sub1Tp0,
-             fullnc, fullcon, fullT0):
-    # sub2nc: node_coords
-    # sub2con: connect
-    # sub2inc: init_node_coords
-    # sub2pnc: prev_node_coords
-    # sub2oN: overlapNodes
-    # sub2oC: overlapCoords
-    # sub2ooN: orig_overlap_nodes
-    # sub2ooC: orig_overlap_coors
-    # sub2bx,by,bz: bounds.ix,iy,iz
+def moveLevel3Mesh(v, vstart,
+             Level3pnc, Level3con, Level3inc, Level3ooN, Level3ooC,
+             Level3bx, Level3by, Level3bz, Level3Tp0,
+             Level2nc, Level2con, Level2h, Level2Tp0,
+             Level1nc, Level1con, Level1T0):
+    # Level3nc: node_coords
+    # Level3con: connect
+    # Level3inc: init_node_coords
+    # Level3pnc: prev_node_coords
+    # Level3oN: overlapNodes
+    # Level3oC: overlapCoords
+    # Level3ooN: orig_overlap_nodes
+    # Level3ooC: orig_overlap_coors
+    # Level3bx,by,bz: bounds.ix,iy,iz
 
     vtot = v - vstart
-    _sub2vx_tot_con, _sub2vy_tot_con, _sub2vz_tot_con = jit_constrain_v(vtot[0],
+    _Level3vx_tot_con, _Level3vy_tot_con, _Level3vz_tot_con = jit_constrain_v(vtot[0],
                                                         vtot[1],
                                                         vtot[2],
-                                                        sub2bx[1],
-                                                        sub2by[1],
-                                                        sub2bz[1],
-                                                        sub2bx[0],
-                                                        sub2by[0],
-                                                        sub2bz[0])
+                                                        Level3bx[1],
+                                                        Level3by[1],
+                                                        Level3bz[1],
+                                                        Level3bx[0],
+                                                        Level3by[0],
+                                                        Level3bz[0])
 
     ### Correction step (fine) ###
-    sub2ncx, sub2ncy, sub2ncz, _a, _b, _c = move_fine_mesh(sub2inc[0],
-                        sub2inc[1],
-                        sub2inc[2],
-                        sub1h[0],
-                        sub1h[1],
-                        sub1h[2],
-                        _sub2vx_tot_con,
-                        _sub2vy_tot_con,
-                        _sub2vz_tot_con)
-    sub2oNx, sub2oNy, sub2oNz, sub2oCx, sub2oCy, sub2oCz\
-        = update_overlap_nodes_coords(sub2ooN[0],
-                                    sub2ooN[1],
-                                    sub2ooN[2],
-                                    sub2ooC[0],
-                                    sub2ooC[1],
-                                    sub2ooC[2],
-                                    _sub2vx_tot_con,
-                                    _sub2vy_tot_con,
-                                    _sub2vz_tot_con,
-                                    sub1h[0],
-                                    sub1h[1],
-                                    sub1h[2])
+    Level3ncx, Level3ncy, Level3ncz, _a, _b, _c = move_fine_mesh(Level3inc[0],
+                        Level3inc[1],
+                        Level3inc[2],
+                        Level2h[0],
+                        Level2h[1],
+                        Level2h[2],
+                        _Level3vx_tot_con,
+                        _Level3vy_tot_con,
+                        _Level3vz_tot_con)
+    Level3oNx, Level3oNy, Level3oNz, Level3oCx, Level3oCy, Level3oCz\
+        = update_overlap_nodes_coords(Level3ooN[0],
+                                    Level3ooN[1],
+                                    Level3ooN[2],
+                                    Level3ooC[0],
+                                    Level3ooC[1],
+                                    Level3ooC[2],
+                                    _Level3vx_tot_con,
+                                    _Level3vy_tot_con,
+                                    _Level3vz_tot_con,
+                                    Level2h[0],
+                                    Level2h[1],
+                                    Level2h[2])
     
-    sub2T0 = interpolatePoints_jax(fullnc[0],
-                                    fullnc[1],
-                                    fullnc[2],
-                                    fullcon[0],
-                                    fullcon[1],
-                                    fullcon[2],
-                                    fullT0,
-                                    sub2ncx,
-                                    sub2ncy,
-                                    sub2ncz)
-    _ = interpolatePoints_jax(sub1nc[0],
-                                sub1nc[1],
-                                sub1nc[2],
-                                sub1con[0],
-                                sub1con[1],
-                                sub1con[2],
-                                sub1Tp0,
-                                sub2ncx,
-                                sub2ncy,
-                                sub2ncz)
-    sub2T0 = add_vectors(sub2T0, _)
+    Level3T0 = interpolatePoints_jax(Level1nc[0],
+                                    Level1nc[1],
+                                    Level1nc[2],
+                                    Level1con[0],
+                                    Level1con[1],
+                                    Level1con[2],
+                                    Level1T0,
+                                    Level3ncx,
+                                    Level3ncy,
+                                    Level3ncz)
+    _ = interpolatePoints_jax(Level2nc[0],
+                                Level2nc[1],
+                                Level2nc[2],
+                                Level2con[0],
+                                Level2con[1],
+                                Level2con[2],
+                                Level2Tp0,
+                                Level3ncx,
+                                Level3ncy,
+                                Level3ncz)
+    Level3T0 = add_vectors(Level3T0, _)
 
-    sub2Tp0 = interpolatePoints_jax(sub2pnc[0],
-                                    sub2pnc[1],
-                                    sub2pnc[2],
-                                    sub2con[0],
-                                    sub2con[1],
-                                    sub2con[2],
-                                    sub2Tp0,
-                                    sub2ncx,
-                                    sub2ncy,
-                                    sub2ncz)
-    sub2T0 = add_vectors(sub2T0, sub2Tp0)
-    return [sub2ncx, sub2ncy, sub2ncz], [sub2oNx, sub2oNy, sub2oNz],\
-           [sub2oCx, sub2oCy, sub2oCz], sub2T0, sub2Tp0, vtot
+    Level3Tp0 = interpolatePoints_jax(Level3pnc[0],
+                                    Level3pnc[1],
+                                    Level3pnc[2],
+                                    Level3con[0],
+                                    Level3con[1],
+                                    Level3con[2],
+                                    Level3Tp0,
+                                    Level3ncx,
+                                    Level3ncy,
+                                    Level3ncz)
+    Level3T0 = add_vectors(Level3T0, Level3Tp0)
+    return [Level3ncx, Level3ncy, Level3ncz], [Level3oNx, Level3oNy, Level3oNz],\
+           [Level3oCx, Level3oCy, Level3oCz], Level3T0, Level3Tp0, vtot
 
 @jax.jit
-def updateSub2AfterMove(sub2nc, sub2con, sub2oN,
-                        sub1nc, sub1con,
-                        fullnc, fullcon,
+def updateLevel3AfterMove(Level3nc, Level3con, Level3oN,
+                        Level2nc, Level2con,
+                        Level1nc, Level1con,
                         vx, vy, vz):
-    sub2oN[0], sub2oN[1], sub2oN[2] = sub2oN[0] - vx, sub2oN[1] - vy, sub2oN[2] - vz
+    Level3oN[0], Level3oN[1], Level3oN[2] = Level3oN[0] - vx, Level3oN[1] - vy, Level3oN[2] - vz
 
     # If mesh moves, recalculate shape functions
-    sub2NcLevel1, sub2dNcdxLevel1, sub2dNcdyLevel1,\
-            sub2dNcdzLevel1, sub2nodesLevel1 =\
-            computeCoarseFineShapeFunctions(fullnc[0],
-                                        fullnc[1],
-                                        fullnc[2],
-                                        fullcon[0],
-                                        fullcon[1],
-                                        fullcon[2],
-                                        sub2nc[0],
-                                        sub2nc[1],
-                                        sub2nc[2],
-                                        sub2con[0],
-                                        sub2con[1],
-                                        sub2con[2])
+    Level3NcLevel1, Level3dNcdxLevel1, Level3dNcdyLevel1,\
+            Level3dNcdzLevel1, Level3nodesLevel1 =\
+            computeCoarseFineShapeFunctions(Level1nc[0],
+                                        Level1nc[1],
+                                        Level1nc[2],
+                                        Level1con[0],
+                                        Level1con[1],
+                                        Level1con[2],
+                                        Level3nc[0],
+                                        Level3nc[1],
+                                        Level3nc[2],
+                                        Level3con[0],
+                                        Level3con[1],
+                                        Level3con[2])
 
-    # Move sub2 with respect to sub1
-    sub2NcLevel2, sub2dNcdxLevel2, sub2dNcdyLevel2,\
-            sub2dNcdzLevel2, sub2nodesLevel2 =\
-            computeCoarseFineShapeFunctions(sub1nc[0],
-                                        sub1nc[1],
-                                        sub1nc[2],
-                                        sub1con[0],
-                                        sub1con[1],
-                                        sub1con[2],
-                                        sub2nc[0],
-                                        sub2nc[1],
-                                        sub2nc[2],
-                                        sub2con[0],
-                                        sub2con[1],
-                                        sub2con[2])
+    # Move Level3 with respect to Level2
+    Level3NcLevel2, Level3dNcdxLevel2, Level3dNcdyLevel2,\
+            Level3dNcdzLevel2, Level3nodesLevel2 =\
+            computeCoarseFineShapeFunctions(Level2nc[0],
+                                        Level2nc[1],
+                                        Level2nc[2],
+                                        Level2con[0],
+                                        Level2con[1],
+                                        Level2con[2],
+                                        Level3nc[0],
+                                        Level3nc[1],
+                                        Level3nc[2],
+                                        Level3con[0],
+                                        Level3con[1],
+                                        Level3con[2])
     
-    sub1sub2_intmat, sub1sub2_node = interpolatePointsMatrix(
-                                sub1nc[0],
-                                sub1nc[1],
-                                sub1nc[2],
-                                sub1con[0],
-                                sub1con[1],
-                                sub1con[2],
-                                sub2nc[0],
-                                sub2nc[1],
-                                sub2nc[2])
-    sub2sub1_intmat, sub2sub1_node = interpolatePointsMatrix(
-                                sub2nc[0],
-                                sub2nc[1],
-                                sub2nc[2],
-                                sub2con[0],
-                                sub2con[1],
-                                sub2con[2],
-                                sub1nc[0],
-                                sub1nc[1],
-                                sub1nc[2])
-    return sub2oN, sub2NcLevel1, sub2dNcdxLevel1, sub2dNcdyLevel1,\
-            sub2dNcdzLevel1, sub2nodesLevel1,\
-            sub2NcLevel2, sub2dNcdxLevel2, sub2dNcdyLevel2,\
-            sub2dNcdzLevel2, sub2nodesLevel2,\
-            sub1sub2_intmat, sub1sub2_node,\
-            sub2sub1_intmat, sub2sub1_node
+    Level2Level3_intmat, Level2Level3_node = interpolatePointsMatrix(
+                                Level2nc[0],
+                                Level2nc[1],
+                                Level2nc[2],
+                                Level2con[0],
+                                Level2con[1],
+                                Level2con[2],
+                                Level3nc[0],
+                                Level3nc[1],
+                                Level3nc[2])
+    Level3Level2_intmat, Level3Level2_node = interpolatePointsMatrix(
+                                Level3nc[0],
+                                Level3nc[1],
+                                Level3nc[2],
+                                Level3con[0],
+                                Level3con[1],
+                                Level3con[2],
+                                Level2nc[0],
+                                Level2nc[1],
+                                Level2nc[2])
+    return Level3oN, Level3NcLevel1, Level3dNcdxLevel1, Level3dNcdyLevel1,\
+            Level3dNcdzLevel1, Level3nodesLevel1,\
+            Level3NcLevel2, Level3dNcdxLevel2, Level3dNcdyLevel2,\
+            Level3dNcdzLevel2, Level3nodesLevel2,\
+            Level2Level3_intmat, Level2Level3_node,\
+            Level3Level2_intmat, Level3Level2_node
 
 @jax.jit
-def prepSub1Move(sub1inc, sub1h, sub1ooN, sub1ooC,
-                 sub1bx, sub1by, sub1bz,
-                 fullh,
+def prepLevel2Move(Level2inc, Level2h, Level2ooN, Level2ooC,
+                 Level2bx, Level2by, Level2bz,
+                 Level1h,
                  vtot, _vx, _vy, _vz):
     _vx_tot_con, _vy_tot_con, _vz_tot_con = jit_constrain_v(vtot[0],
                                                             vtot[1],
                                                             vtot[2],
-                                                            sub1bx[1],
-                                                            sub1by[1],
-                                                            sub1bz[1],
-                                                            sub1bx[0],
-                                                            sub1by[0],
-                                                            sub1bz[0])
+                                                            Level2bx[1],
+                                                            Level2by[1],
+                                                            Level2bz[1],
+                                                            Level2bx[0],
+                                                            Level2by[0],
+                                                            Level2bz[0])
     # Need to round due to numerical round off error and truncation
-    _tmp_x = (jnp.round(fullh[0] / sub1h[0])).astype(int)
-    _tmp_y = (jnp.round(fullh[1] / sub1h[1])).astype(int)
-    _tmp_z = (jnp.round(fullh[2] / sub1h[2])).astype(int)
+    _tmp_x = (jnp.round(Level1h[0] / Level2h[0])).astype(int)
+    _tmp_y = (jnp.round(Level1h[1] / Level2h[1])).astype(int)
+    _tmp_z = (jnp.round(Level1h[2] / Level2h[2])).astype(int)
     _vvx, _vvy, _vvz = _vx, _vy, _vz
 
-    sub1ncx, sub1ncy, sub1ncz, _vx, _vy, _vz = move_fine_mesh(sub1inc[0],
-                        sub1inc[1],
-                        sub1inc[2],
-                        fullh[0],
-                        fullh[1],
-                        fullh[2],
+    Level2ncx, Level2ncy, Level2ncz, _vx, _vy, _vz = move_fine_mesh(Level2inc[0],
+                        Level2inc[1],
+                        Level2inc[2],
+                        Level1h[0],
+                        Level1h[1],
+                        Level1h[2],
                         _vx_tot_con,
                         _vy_tot_con,
                         _vz_tot_con)
 
     _vx, _vy, _vz = _vx * _tmp_x, _vy * _tmp_y, _vz * _tmp_z
-    moveSub1 = (_vvx != _vx) | (_vvy != _vy) | (_vvz != _vz)
+    moveLevel2 = (_vvx != _vx) | (_vvy != _vy) | (_vvz != _vz)
 
-    sub1oNx, sub1oNy, sub1oNz, sub1oCx, sub1oCy, sub1oCz\
-                    = update_overlap_nodes_coords(sub1ooN[0],
-                                                sub1ooN[1],
-                                                sub1ooN[2],
-                                                sub1ooC[0],
-                                                sub1ooC[1],
-                                                sub1ooC[2],
+    Level2oNx, Level2oNy, Level2oNz, Level2oCx, Level2oCy, Level2oCz\
+                    = update_overlap_nodes_coords(Level2ooN[0],
+                                                Level2ooN[1],
+                                                Level2ooN[2],
+                                                Level2ooC[0],
+                                                Level2ooC[1],
+                                                Level2ooC[2],
                                                 _vx_tot_con,
                                                 _vy_tot_con,
                                                 _vz_tot_con,
-                                                fullh[0],
-                                                fullh[1],
-                                                fullh[2])
-    return [sub1ncx, sub1ncy, sub1ncz], [sub1oNx, sub1oNy, sub1oNz],\
-           [sub1oCx, sub1oCy, sub1oCz], _vx, _vy, _vz, moveSub1
+                                                Level1h[0],
+                                                Level1h[1],
+                                                Level1h[2])
+    return [Level2ncx, Level2ncy, Level2ncz], [Level2oNx, Level2oNy, Level2oNz],\
+           [Level2oCx, Level2oCy, Level2oCz], _vx, _vy, _vz, moveLevel2
 
-def moveSub1Mesh(sub1nc, sub1con, sub1pnc, sub1Tp0,
-                 fullnc, fullcon, fullT0):
-    sub1T0 = interpolatePoints_jax(fullnc[0],
-                                    fullnc[1],
-                                    fullnc[2],
-                                    fullcon[0],
-                                    fullcon[1],
-                                    fullcon[2],
-                                    fullT0,
-                                    sub1nc[0],
-                                    sub1nc[1],
-                                    sub1nc[2])
-    sub1Tp0 = interpolatePoints_jax(sub1pnc[0],
-                                    sub1pnc[1],
-                                    sub1pnc[2],
-                                    sub1con[0],
-                                    sub1con[1],
-                                    sub1con[2],
-                                    sub1Tp0,
-                                    sub1nc[0],
-                                    sub1nc[1],
-                                    sub1nc[2])
-    sub1T0 = add_vectors(sub1T0, sub1Tp0)
-    return sub1T0, sub1Tp0
+def moveLevel2Mesh(Level2nc, Level2con, Level2pnc, Level2Tp0,
+                 Level1nc, Level1con, Level1T0):
+    Level2T0 = interpolatePoints_jax(Level1nc[0],
+                                    Level1nc[1],
+                                    Level1nc[2],
+                                    Level1con[0],
+                                    Level1con[1],
+                                    Level1con[2],
+                                    Level1T0,
+                                    Level2nc[0],
+                                    Level2nc[1],
+                                    Level2nc[2])
+    Level2Tp0 = interpolatePoints_jax(Level2pnc[0],
+                                    Level2pnc[1],
+                                    Level2pnc[2],
+                                    Level2con[0],
+                                    Level2con[1],
+                                    Level2con[2],
+                                    Level2Tp0,
+                                    Level2nc[0],
+                                    Level2nc[1],
+                                    Level2nc[2])
+    Level2T0 = add_vectors(Level2T0, Level2Tp0)
+    return Level2T0, Level2Tp0
 
 @jax.jit
-def updateSub1objects(sub1nc, sub1con, sub1pnc, sub1Tp0,
-                 fullnc, fullcon, fullT0):
+def updateLevel2objects(Level2nc, Level2con, Level2pnc, Level2Tp0,
+                 Level1nc, Level1con, Level1T0):
 
-    sub1T0, sub1Tp0 = moveSub1Mesh(sub1nc,
-                                   sub1con,
-                                   sub1pnc,
-                                   sub1Tp0,
-                                   fullnc,
-                                   fullcon,
-                                   fullT0)
+    Level2T0, Level2Tp0 = moveLevel2Mesh(Level2nc,
+                                   Level2con,
+                                   Level2pnc,
+                                   Level2Tp0,
+                                   Level1nc,
+                                   Level1con,
+                                   Level1T0)
     # If mesh moves, recalculate shape functions
-    sub1NcLevel1, sub1dNcdxLevel1, sub1dNcdyLevel1,\
-        sub1dNcdzLevel1, sub1nodesLevel1 =\
-        computeCoarseFineShapeFunctions(fullnc[0],
-                                        fullnc[1],
-                                        fullnc[2],
-                                        fullcon[0],
-                                        fullcon[1],
-                                        fullcon[2],
-                                        sub1nc[0],
-                                        sub1nc[1],
-                                        sub1nc[2],
-                                        sub1con[0],
-                                        sub1con[1],
-                                        sub1con[2])
-    fullsub1_intmat, fullsub1_node = interpolatePointsMatrix(
-                                        fullnc[0],
-                                        fullnc[1],
-                                        fullnc[2],
-                                        fullcon[0],
-                                        fullcon[1],
-                                        fullcon[2],
-                                        sub1nc[0],
-                                        sub1nc[1],
-                                        sub1nc[2])
-    sub1full_intmat, sub1full_node = interpolatePointsMatrix(
-                            sub1nc[0],
-                            sub1nc[1],
-                            sub1nc[2],
-                            sub1con[0],
-                            sub1con[1],
-                            sub1con[2],
-                            fullnc[0],
-                            fullnc[1],
-                            fullnc[2])
-    return sub1T0, sub1Tp0, sub1NcLevel1, sub1dNcdxLevel1, sub1dNcdyLevel1,\
-        sub1dNcdzLevel1, sub1nodesLevel1, fullsub1_intmat, fullsub1_node,\
-        sub1full_intmat, sub1full_node
+    Level2NcLevel1, Level2dNcdxLevel1, Level2dNcdyLevel1,\
+        Level2dNcdzLevel1, Level2nodesLevel1 =\
+        computeCoarseFineShapeFunctions(Level1nc[0],
+                                        Level1nc[1],
+                                        Level1nc[2],
+                                        Level1con[0],
+                                        Level1con[1],
+                                        Level1con[2],
+                                        Level2nc[0],
+                                        Level2nc[1],
+                                        Level2nc[2],
+                                        Level2con[0],
+                                        Level2con[1],
+                                        Level2con[2])
+    Level1Level2_intmat, Level1Level2_node = interpolatePointsMatrix(
+                                        Level1nc[0],
+                                        Level1nc[1],
+                                        Level1nc[2],
+                                        Level1con[0],
+                                        Level1con[1],
+                                        Level1con[2],
+                                        Level2nc[0],
+                                        Level2nc[1],
+                                        Level2nc[2])
+    Level2Level1_intmat, Level2Level1_node = interpolatePointsMatrix(
+                            Level2nc[0],
+                            Level2nc[1],
+                            Level2nc[2],
+                            Level2con[0],
+                            Level2con[1],
+                            Level2con[2],
+                            Level1nc[0],
+                            Level1nc[1],
+                            Level1nc[2])
+    return Level2T0, Level2Tp0, Level2NcLevel1, Level2dNcdxLevel1, Level2dNcdyLevel1,\
+        Level2dNcdzLevel1, Level2nodesLevel1, Level1Level2_intmat, Level1Level2_node,\
+        Level2Level1_intmat, Level2Level1_node
 
 @jax.jit
-def moveEverything(v, vstart, sub2pnc, sub2con, sub2inc, sub2ooN, sub2ooC,
-             sub2bx, sub2by, sub2bz, sub2Tp0,
-             sub1pnc, sub1con, sub1h, sub1Tp0,
-             fullnc, fullcon, fullT0,
-             sub1inc, sub1ooN, sub1ooC, sub1bx, sub1by, sub1bz, fullh, _vx, _vy, _vz):
-    sub2nc ,sub2oN, sub2oC, sub2T0, sub2Tp0, vtot = moveSub2Mesh(v, vstart,
-             sub2pnc, sub2con, sub2inc, sub2ooN, sub2ooC,
-             sub2bx, sub2by, sub2bz, sub2Tp0,
-             sub1pnc, sub1con, sub1h, sub1Tp0,
-             fullnc, fullcon, fullT0)
-    sub1nc, sub1oN, sub1oC, _vx, _vy, _vz, moveSub1 = prepSub1Move(sub1inc,
-                                                                   sub1h,
-                                                                   sub1ooN,
-                                                                   sub1ooC,
-                                                                   sub1bx,
-                                                                   sub1by,
-                                                                   sub1bz,
-                                                                   fullh,
+def moveEverything(v, vstart, Level3pnc, Level3con, Level3inc, Level3ooN, Level3ooC,
+             Level3bx, Level3by, Level3bz, Level3Tp0,
+             Level2pnc, Level2con, Level2h, Level2Tp0,
+             Level1nc, Level1con, Level1T0,
+             Level2inc, Level2ooN, Level2ooC, Level2bx, Level2by, Level2bz, Level1h, _vx, _vy, _vz):
+    Level3nc ,Level3oN, Level3oC, Level3T0, Level3Tp0, vtot = moveLevel3Mesh(v, vstart,
+             Level3pnc, Level3con, Level3inc, Level3ooN, Level3ooC,
+             Level3bx, Level3by, Level3bz, Level3Tp0,
+             Level2pnc, Level2con, Level2h, Level2Tp0,
+             Level1nc, Level1con, Level1T0)
+    Level2nc, Level2oN, Level2oC, _vx, _vy, _vz, moveLevel2 = prepLevel2Move(Level2inc,
+                                                                   Level2h,
+                                                                   Level2ooN,
+                                                                   Level2ooC,
+                                                                   Level2bx,
+                                                                   Level2by,
+                                                                   Level2bz,
+                                                                   Level1h,
                                                                    vtot,
                                                                    _vx,
                                                                    _vy,
                                                                    _vz)
-    sub1T0, sub1Tp0, sub1NcLevel1, sub1dNcdxLevel1, sub1dNcdyLevel1,\
-    sub1dNcdzLevel1, sub1nodesLevel1, fullsub1_intmat, fullsub1_node,\
-    sub1full_intmat, sub1full_node = updateSub1objects(sub1nc, 
-                                                       sub1con,
-                                                       sub1pnc,
-                                                       sub1Tp0,
-                                                       fullnc,
-                                                       fullcon,
-                                                       fullT0)
-    sub2oN, sub2NcLevel1, sub2dNcdxLevel1, sub2dNcdyLevel1,\
-    sub2dNcdzLevel1, sub2nodesLevel1,\
-    sub2NcLevel2, sub2dNcdxLevel2, sub2dNcdyLevel2,\
-    sub2dNcdzLevel2, sub2nodesLevel2,\
-    sub1sub2_intmat, sub1sub2_node,\
-    sub2sub1_intmat, sub2sub1_node = updateSub2AfterMove(sub2nc, sub2con, sub2oN,
-                        sub1nc, sub1con,
-                        fullnc, fullcon,
+    Level2T0, Level2Tp0, Level2NcLevel1, Level2dNcdxLevel1, Level2dNcdyLevel1,\
+    Level2dNcdzLevel1, Level2nodesLevel1, Level1Level2_intmat, Level1Level2_node,\
+    Level2Level1_intmat, Level2Level1_node = updateLevel2objects(Level2nc, 
+                                                       Level2con,
+                                                       Level2pnc,
+                                                       Level2Tp0,
+                                                       Level1nc,
+                                                       Level1con,
+                                                       Level1T0)
+    Level3oN, Level3NcLevel1, Level3dNcdxLevel1, Level3dNcdyLevel1,\
+    Level3dNcdzLevel1, Level3nodesLevel1,\
+    Level3NcLevel2, Level3dNcdxLevel2, Level3dNcdyLevel2,\
+    Level3dNcdzLevel2, Level3nodesLevel2,\
+    Level2Level3_intmat, Level2Level3_node,\
+    Level3Level2_intmat, Level3Level2_node = updateLevel3AfterMove(Level3nc, Level3con, Level3oN,
+                        Level2nc, Level2con,
+                        Level1nc, Level1con,
                         _vx, _vy, _vz)
-    return sub2nc, sub2oN, sub2oC, sub2T0, sub2Tp0, vtot, sub1nc, sub1oN, sub1oC,\
-        sub1T0, sub1Tp0, sub1NcLevel1, sub1dNcdxLevel1, sub1dNcdyLevel1,\
-        sub1dNcdzLevel1, sub1nodesLevel1, fullsub1_intmat, fullsub1_node,\
-        sub1full_intmat, sub1full_node, sub2NcLevel1, sub2dNcdxLevel1, sub2dNcdyLevel1,\
-        sub2dNcdzLevel1, sub2nodesLevel1,\
-        sub2NcLevel2, sub2dNcdxLevel2, sub2dNcdyLevel2,\
-        sub2dNcdzLevel2, sub2nodesLevel2,\
-        sub1sub2_intmat, sub1sub2_node,\
-        sub2sub1_intmat, sub2sub1_node, _vx, _vy, _vz
+    return Level3nc, Level3oN, Level3oC, Level3T0, Level3Tp0, vtot, Level2nc, Level2oN, Level2oC,\
+        Level2T0, Level2Tp0, Level2NcLevel1, Level2dNcdxLevel1, Level2dNcdyLevel1,\
+        Level2dNcdzLevel1, Level2nodesLevel1, Level1Level2_intmat, Level1Level2_node,\
+        Level2Level1_intmat, Level2Level1_node, Level3NcLevel1, Level3dNcdxLevel1, Level3dNcdyLevel1,\
+        Level3dNcdzLevel1, Level3nodesLevel1,\
+        Level3NcLevel2, Level3dNcdxLevel2, Level3dNcdyLevel2,\
+        Level3dNcdzLevel2, Level3nodesLevel2,\
+        Level2Level3_intmat, Level2Level3_node,\
+        Level3Level2_intmat, Level3Level2_node, _vx, _vy, _vz
