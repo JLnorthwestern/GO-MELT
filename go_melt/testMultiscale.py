@@ -44,7 +44,7 @@ def testMultiscale(solver_input: dict):
     ### Parse inputs into multiple objects (END) ###
 
     ### User-defined parameters (START) ###
-    # Timestep (implicit)
+    # Timestep
     dt = solver_input.get("nonmesh", {}).get("timestep", 1e-5)
     # Whether to use Forward Euler method (default is yes)
     explicit = solver_input.get("nonmesh", {}).get("explicit", 1)
