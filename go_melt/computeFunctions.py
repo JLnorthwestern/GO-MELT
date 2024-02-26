@@ -145,45 +145,6 @@ def convert2XYZ(i, ne_x, ne_y, nn_x, nn_y):
 
     return ix, iy, iz, idx
 
-def getBC(LHS, nx, ny, nz):
-    """ getBC updates the implicit LHS to have Dirichlet boundary conditions.
-        In its current form, the top and bottom are not included (since testing 2D).
-        :param LHS: current left-hand side matrix (implicit)
-        :param nx, ny, nz: number of nodes in x, y, and z directions
-        :return LHS: left-hand side matrix updated with Dirichlet BCs
-    """
-
-    # Top surface is arange(0, nnx * nny)
-    # Bottom surface is arange(nnx * nny * (nnz - 1), nnx * nny * nnz)
-    # West is arange(0, nnx * nny * nnz, nnx) (spaced by nnx)
-    # East is arange(nnx - 1, nnx * nny * nnz, nnx)
-    # South is arange(0, nnx) + nnx * nny * arange(0, nn_z-1)
-    # North is arange(nnx * nny - nnx - 1, nnx * nny) + nnx * nny * arange(0, nn_z)
-    nn = nx * ny * nz
-    bidx = jnp.arange(0, nx * ny)
-    tidx = jnp.arange(nx * ny * (nz - 1), nn)
-    widx = jnp.arange(0, nn, nx)
-    eidx = jnp.arange(nx - 1, nn, nx)
-    sidx = jnp.arange(0, nx)[:, jnp.newaxis] + \
-        (nx * ny * jnp.arange(0, nz))[jnp.newaxis, :]
-    sidx = sidx.reshape(-1)
-    nidx = jnp.arange(
-        nx * (ny - 1), nx * ny)[:, jnp.newaxis] + (nx * ny * jnp.arange(0, nz))[jnp.newaxis, :]
-    nidx = nidx.reshape(-1)
-
-    # Ignore top and bottom
-    # idx = jnp.concatenate([tidx, bidx, widx, eidx, sidx, nidx])
-    idx = jnp.concatenate([widx, eidx, sidx, nidx])
-    idx = jnp.unique(idx)
-    data = jnp.ones_like(idx)
-    identity = scipy.sparse.csr_matrix((data, (idx, idx)), shape=(nn, nn))
-
-    BCLHS = identity @ LHS
-    LHS = LHS - BCLHS
-    LHS = LHS + identity
-    return LHS
-
-
 @jax.jit
 def computeQuad3dFemShapeFunctions_jax(coords):
     """ def computeQuad3dFemShapeFunctions_jax calculates the 3D shape functions
