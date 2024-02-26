@@ -338,6 +338,16 @@ def computeSources(xf, yf, zf, cfx, cfy, cfz,
 
 @jax.jit
 def computeSourceFunction_jax(x, y, z, t, v, r, d, P, eta):
+    """ computeSourceFunction_jax computes a 3D Gaussian term.
+        :param x, y, z: nodal coordinates
+        :param t: time
+        :param v: laser center
+        :param r: laser radius
+        :param d: laser penetration depth
+        :param P: laser power
+        :param eta: laser emissivity
+        :return F: output of source equation
+    """
     # Source term params
     xm = v[0]
     ym = v[1]
@@ -356,6 +366,17 @@ def computeSourceFunction_jax(x, y, z, t, v, r, d, P, eta):
 
 @jax.jit
 def interpolatePointsMatrix(x, y, z, cx, cy, cz, xn, yn, zn):
+    """ interpolatePointsMatrix computes shape functions and node indices
+        to interpolate solutions located on x, y, z and connected with
+        cx, cy, cz to new coordinates xn, yn, zn. This function outputs
+        shape functions for interpolation that is between levels
+        :param x, y, z: source nodal coordinates
+        :param cx, cy, cz: connectivity matrix
+        :param xn, yn, zn: output nodal coordinates
+        :return _Nc, _node
+        :return _Nc: shape function connecting source to output
+        :return _node: coarse node indices
+    """
     ne_x = cx.shape[0]
     ne_y = cy.shape[0]
     ne_z = cz.shape[0]
@@ -440,11 +461,26 @@ def interpolatePointsMatrix(x, y, z, cx, cy, cz, xn, yn, zn):
 
 @jax.jit 
 def interpolate_w_matrix(intmat, node, T):
+    """ interpolate_w_matrix uses shape functions from interpolatePointsMatrix
+        to interpolate the solution to the new nodal coordinates
+        :param intmat: shape functions for interpolation
+        :param node: nodal indices of source solution
+        :param T: source solution
+        :return T_new: interpolated solution at new nodal coordinates
+    """
     return jnp.multiply(intmat, T[node]).sum(axis=1)
 
 
 def interpolatePoints_jax(x, y, z, cx, cy, cz,
                           u, xn, yn, zn):
+    """ interpolatePoints_jax interpolate solutions located on x, y, z 
+        and connected with cx, cy, cz to new coordinates xn, yn, zn. Values
+        that are later bin counted are the output
+        :param x, y, z: source nodal coordinates
+        :param cx, cy, cz: connectivity matrix
+        :param xn, yn, zn: output nodal coordinates
+        :return _val: nodal values that need to be bincounted
+    """
     ne_x = cx.shape[0]
     ne_y = cy.shape[0]
     ne_z = cz.shape[0]
