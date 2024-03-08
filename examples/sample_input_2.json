@@ -13,10 +13,10 @@
 		"bounds": {"x": [1.5, 2.5], "y": [0.5, 1.5], "z": [1.5, 2]}
 	},
 	"properties":{
-		"timestep": 5e-6,
 		"laser_eta": 0.3
 	},
 	"nonmesh": {
+		"timestep": 5e-6,
 		"save": "./sample_results_2/",
 		"toolpath": "sample_laser_2.txt",
 		"x_start_cube": 2,
