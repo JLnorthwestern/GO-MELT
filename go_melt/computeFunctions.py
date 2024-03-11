@@ -430,30 +430,30 @@ def computeSourceFunction_jax(x, y, z, t, v, r, d, P, eta):
 
 
 @jax.jit
-def interpolatePointsMatrix(x, y, z, cx, cy, cz, xn, yn, zn):
+def interpolatePointsMatrix(node_coords, conn, node_coords_new):
     """interpolatePointsMatrix computes shape functions and node indices
-    to interpolate solutions located on x, y, z and connected with
-    cx, cy, cz to new coordinates xn, yn, zn. This function outputs
+    to interpolate solutions located on node_coords and connected with
+    conn to new coordinates node_coords_new. This function outputs
     shape functions for interpolation that is between levels
-    :param x, y, z: source nodal coordinates
-    :param cx, cy, cz: connectivity matrix
-    :param xn, yn, zn: output nodal coordinates
+    :param node_coords: source nodal coordinates
+    :param conn: connectivity matrix
+    :param node_coords_new: output nodal coordinates
     :return _Nc, _node
     :return _Nc: shape function connecting source to output
     :return _node: coarse node indices
     """
-    ne_x = cx.shape[0]
-    ne_y = cy.shape[0]
-    ne_z = cz.shape[0]
+    ne_x = conn[0].shape[0]
+    ne_y = conn[1].shape[0]
+    ne_z = conn[2].shape[0]
     nn_x, nn_y, nn_z = ne_x + 1, ne_y + 1, ne_z + 1
 
-    nn_xn = len(xn)
-    nn_yn = len(yn)
-    nn_zn = len(zn)
+    nn_xn = len(node_coords_new[0])
+    nn_yn = len(node_coords_new[1])
+    nn_zn = len(node_coords_new[2])
     nn2 = nn_xn * nn_yn * nn_zn
-    h_x = x[1] - x[0]
-    h_y = y[1] - y[0]
-    h_z = z[1] - z[0]
+    h_x = node_coords[0][1] - node_coords[0][0]
+    h_y = node_coords[1][1] - node_coords[1][0]
+    h_z = node_coords[2][1] - node_coords[2][0]
 
     def stepInterpolatePoints(ielt):
         # Get nodal indices
@@ -462,9 +462,9 @@ def interpolatePointsMatrix(x, y, z, cx, cy, cz, xn, yn, zn):
         iyn -= izn * nn_yn
         ixn = jnp.mod(ielt, nn_xn)
 
-        _x = xn[ixn, jnp.newaxis]
-        _y = yn[iyn, jnp.newaxis]
-        _z = zn[izn, jnp.newaxis]
+        _x = node_coords_new[0][ixn, jnp.newaxis]
+        _y = node_coords_new[1][iyn, jnp.newaxis]
+        _z = node_coords_new[2][izn, jnp.newaxis]
 
         x_comp = (ne_x - 1) * jnp.ones_like(_x)
         y_comp = (ne_y - 1) * jnp.ones_like(_y)
@@ -475,32 +475,32 @@ def interpolatePointsMatrix(x, y, z, cx, cy, cz, xn, yn, zn):
         z_comp2 = jnp.zeros_like(_z)
 
         # Figure out which coarse element we are in
-        _floorx = jnp.floor((_x - x[0]) / h_x)
+        _floorx = jnp.floor((_x - node_coords[0][0]) / h_x)
         _conx = jnp.concatenate((_floorx, x_comp))
         _ielt_x = jnp.min(_conx)
         _conx = jnp.concatenate((_ielt_x[jnp.newaxis], x_comp2))
         ielt_x = jnp.max(_conx).T.astype(int)
 
-        _floory = jnp.floor((_y - y[0]) / h_y)
+        _floory = jnp.floor((_y - node_coords[1][0]) / h_y)
         _cony = jnp.concatenate((_floory, y_comp))
         _ielt_y = jnp.min(_cony)
         _cony = jnp.concatenate((_ielt_y[jnp.newaxis], y_comp2))
         ielt_y = jnp.max(_cony).T.astype(int)
 
-        _floorz = jnp.floor((_z - z[0]) / h_z)
+        _floorz = jnp.floor((_z - node_coords[2][0]) / h_z)
         _conz = jnp.concatenate((_floorz, z_comp))
         _ielt_z = jnp.min(_conz).T.astype(int)
         _conz = jnp.concatenate((_ielt_z[jnp.newaxis], z_comp2))
         ielt_z = jnp.max(_conz).T.astype(int)
 
-        nodex = cx[ielt_x, :]
-        nodey = cy[ielt_y, :]
-        nodez = cz[ielt_z, :]
+        nodex = conn[0][ielt_x, :]
+        nodey = conn[1][ielt_y, :]
+        nodez = conn[2][ielt_z, :]
         node = nodex + nodey * nn_x + nodez * (nn_x * nn_y)
 
-        xx = x[nodex]
-        yy = y[nodey]
-        zz = z[nodez]
+        xx = node_coords[0][nodex]
+        yy = node_coords[1][nodey]
+        zz = node_coords[2][nodez]
 
         xc0 = xx[0]
         xc1 = xx[1]
@@ -546,27 +546,27 @@ def interpolate_w_matrix(intmat, node, T):
     return jnp.multiply(intmat, T[node]).sum(axis=1)
 
 
-def interpolatePoints_jax(x, y, z, cx, cy, cz, u, xn, yn, zn):
-    """interpolatePoints_jax interpolate solutions located on x, y, z
-    and connected with cx, cy, cz to new coordinates xn, yn, zn. Values
+def interpolatePoints_jax(node_coords, conn, u, node_coords_new):
+    """interpolatePoints_jax interpolate solutions located on node_coords
+    and connected with conn to new coordinates node_coords_new. Values
     that are later bin counted are the output
-    :param x, y, z: source nodal coordinates
-    :param cx, cy, cz: connectivity matrix
-    :param xn, yn, zn: output nodal coordinates
+    :param node_coords: source nodal coordinates
+    :param conn: connectivity matrix
+    :param node_coords_new: output nodal coordinates
     :return _val: nodal values that need to be bincounted
     """
-    ne_x = cx.shape[0]
-    ne_y = cy.shape[0]
-    ne_z = cz.shape[0]
+    ne_x = conn[0].shape[0]
+    ne_y = conn[1].shape[0]
+    ne_z = conn[2].shape[0]
     nn_x, nn_y, nn_z = ne_x + 1, ne_y + 1, ne_z + 1
 
-    nn_xn = len(xn)
-    nn_yn = len(yn)
-    nn_zn = len(zn)
+    nn_xn = len(node_coords_new[0])
+    nn_yn = len(node_coords_new[1])
+    nn_zn = len(node_coords_new[2])
     nn2 = nn_xn * nn_yn * nn_zn
-    h_x = x[1] - x[0]
-    h_y = y[1] - y[0]
-    h_z = z[1] - z[0]
+    h_x = node_coords[0][1] - node_coords[0][0]
+    h_y = node_coords[1][1] - node_coords[1][0]
+    h_z = node_coords[2][1] - node_coords[2][0]
 
     def stepInterpolatePoints(ielt):
         # Get nodal indices
@@ -575,9 +575,9 @@ def interpolatePoints_jax(x, y, z, cx, cy, cz, u, xn, yn, zn):
         iyn -= izn * nn_yn
         ixn = jnp.mod(ielt, nn_xn)
 
-        _x = xn[ixn, jnp.newaxis]
-        _y = yn[iyn, jnp.newaxis]
-        _z = zn[izn, jnp.newaxis]
+        _x = node_coords_new[0][ixn, jnp.newaxis]
+        _y = node_coords_new[1][iyn, jnp.newaxis]
+        _z = node_coords_new[2][izn, jnp.newaxis]
 
         x_comp = (ne_x - 1) * jnp.ones_like(_x)
         y_comp = (ne_y - 1) * jnp.ones_like(_y)
@@ -588,32 +588,32 @@ def interpolatePoints_jax(x, y, z, cx, cy, cz, u, xn, yn, zn):
         z_comp2 = jnp.zeros_like(_z)
 
         # Figure out which coarse element we are in
-        _floorx = jnp.floor((_x - x[0]) / h_x)
+        _floorx = jnp.floor((_x - node_coords[0][0]) / h_x)
         _conx = jnp.concatenate((_floorx, x_comp))
         _ielt_x = jnp.min(_conx)
         _conx = jnp.concatenate((_ielt_x[jnp.newaxis], x_comp2))
         ielt_x = jnp.max(_conx).T.astype(int)
 
-        _floory = jnp.floor((_y - y[0]) / h_y)
+        _floory = jnp.floor((_y - node_coords[1][0]) / h_y)
         _cony = jnp.concatenate((_floory, y_comp))
         _ielt_y = jnp.min(_cony)
         _cony = jnp.concatenate((_ielt_y[jnp.newaxis], y_comp2))
         ielt_y = jnp.max(_cony).T.astype(int)
 
-        _floorz = jnp.floor((_z - z[0]) / h_z)
+        _floorz = jnp.floor((_z - node_coords[2][0]) / h_z)
         _conz = jnp.concatenate((_floorz, z_comp))
         _ielt_z = jnp.min(_conz).T.astype(int)
         _conz = jnp.concatenate((_ielt_z[jnp.newaxis], z_comp2))
         ielt_z = jnp.max(_conz).T.astype(int)
 
-        nodex = cx[ielt_x, :]
-        nodey = cy[ielt_y, :]
-        nodez = cz[ielt_z, :]
+        nodex = conn[0][ielt_x, :]
+        nodey = conn[1][ielt_y, :]
+        nodez = conn[2][ielt_z, :]
         node = nodex + nodey * nn_x + nodez * (nn_x * nn_y)
 
-        xx = x[nodex]
-        yy = y[nodey]
-        zz = z[nodez]
+        xx = node_coords[0][nodex]
+        yy = node_coords[1][nodey]
+        zz = node_coords[2][nodez]
 
         xc0 = xx[0]
         xc1 = xx[1]
@@ -833,18 +833,10 @@ def computeCoarseFineShapeFunctions(
 
 @partial(jax.jit, static_argnames=["nn1", "nn2"])
 def computeCoarseTprimeMassTerm_jax(
-    xnf_x,
-    xnf_y,
-    xnf_z,  # Level3
-    xnm_x,
-    xnm_y,
-    xnm_z,  # Level2
-    nconnf_x,
-    nconnf_y,
-    nconnf_z,  # Level3
-    nconnm_x,
-    nconnm_y,
-    nconnm_z,  # Level2
+    xnf,  # Level3
+    xnm,  # Level2
+    nconnf,  # Level3
+    nconnm,  # Level2
     Tprimef,
     Tprimef0,
     Tprimem,
@@ -868,17 +860,17 @@ def computeCoarseTprimeMassTerm_jax(
     Tprimem_new = Tprimem - Tprimem0
 
     # Level 3
-    nef_x = nconnf_x.shape[0]
-    nef_y = nconnf_y.shape[0]
-    nef_z = nconnf_z.shape[0]
+    nef_x = nconnf[0].shape[0]
+    nef_y = nconnf[1].shape[0]
+    nef_z = nconnf[2].shape[0]
     nef = nef_x * nef_y * nef_z
-    nnf_x = xnf_x.shape[0]
-    nnf_y = xnf_y.shape[0]
+    nnf_x = xnf[0].shape[0]
+    nnf_y = xnf[1].shape[0]
 
     # Level 3 Get shape functions and weights
-    coordsf_x = xnf_x[nconnf_x[0, :]].reshape(-1, 1)
-    coordsf_y = xnf_y[nconnf_y[0, :]].reshape(-1, 1)
-    coordsf_z = xnf_z[nconnf_z[0, :]].reshape(-1, 1)
+    coordsf_x = xnf[0][nconnf[0][0, :]].reshape(-1, 1)
+    coordsf_y = xnf[1][nconnf[1][0, :]].reshape(-1, 1)
+    coordsf_z = xnf[2][nconnf[2][0, :]].reshape(-1, 1)
     coordsf = jnp.concatenate([coordsf_x, coordsf_y, coordsf_z], axis=1)
     Nf, dNdxf, wqf = computeQuad3dFemShapeFunctions_jax(coordsf)
 
@@ -895,17 +887,17 @@ def computeCoarseTprimeMassTerm_jax(
     ).sum(axis=2)
 
     # Level 2
-    nem_x = nconnm_x.shape[0]
-    nem_y = nconnm_y.shape[0]
-    nem_z = nconnm_z.shape[0]
+    nem_x = nconnm[0].shape[0]
+    nem_y = nconnm[1].shape[0]
+    nem_z = nconnm[2].shape[0]
     nem = nem_x * nem_y * nem_z
-    nnm_x = xnm_x.shape[0]
-    nnm_y = xnm_y.shape[0]
+    nnm_x = xnm[0].shape[0]
+    nnm_y = xnm[1].shape[0]
 
     # Level 2 Get shape functions and weights
-    coordsm_x = xnm_x[nconnm_x[0, :]].reshape(-1, 1)
-    coordsm_y = xnm_y[nconnm_y[0, :]].reshape(-1, 1)
-    coordsm_z = xnm_z[nconnm_z[0, :]].reshape(-1, 1)
+    coordsm_x = xnm[0][nconnm[0][0, :]].reshape(-1, 1)
+    coordsm_y = xnm[1][nconnm[1][0, :]].reshape(-1, 1)
+    coordsm_z = xnm[2][nconnm[2][0, :]].reshape(-1, 1)
     coordsm = jnp.concatenate([coordsm_x, coordsm_y, coordsm_z], axis=1)
     Nm, dNdxm, wqm = computeQuad3dFemShapeFunctions_jax(coordsm)
 
@@ -925,18 +917,10 @@ def computeCoarseTprimeMassTerm_jax(
 
 @partial(jax.jit, static_argnames=["nn1", "nn2"])
 def computeCoarseTprimeTerm_jax(
-    xnf_x,
-    xnf_y,
-    xnf_z,  # Level3
-    xnm_x,
-    xnm_y,
-    xnm_z,  # Level2
-    nconnf_x,
-    nconnf_y,
-    nconnf_z,  # Level3
-    nconnm_x,
-    nconnm_y,
-    nconnm_z,  # Level2
+    xnf,  # Level3
+    xnm,  # Level2
+    nconnf,  # Level3
+    nconnm,  # Level2
     Tprimef,
     Tprimem,  # Level3, Level2
     k,
@@ -956,17 +940,17 @@ def computeCoarseTprimeTerm_jax(
     nn2,
 ):
     # Level 3
-    nef_x = nconnf_x.shape[0]
-    nef_y = nconnf_y.shape[0]
-    nef_z = nconnf_z.shape[0]
+    nef_x = nconnf[0].shape[0]
+    nef_y = nconnf[1].shape[0]
+    nef_z = nconnf[2].shape[0]
     nef = nef_x * nef_y * nef_z
-    nnf_x = xnf_x.shape[0]
-    nnf_y = xnf_y.shape[0]
+    nnf_x = xnf[0].shape[0]
+    nnf_y = xnf[1].shape[0]
 
     # Level 3 Get shape functions and weights
-    coordsf_x = xnf_x[nconnf_x[0, :]].reshape(-1, 1)
-    coordsf_y = xnf_y[nconnf_y[0, :]].reshape(-1, 1)
-    coordsf_z = xnf_z[nconnf_z[0, :]].reshape(-1, 1)
+    coordsf_x = xnf[0][nconnf[0][0, :]].reshape(-1, 1)
+    coordsf_y = xnf[1][nconnf[1][0, :]].reshape(-1, 1)
+    coordsf_z = xnf[2][nconnf[2][0, :]].reshape(-1, 1)
     coordsf = jnp.concatenate([coordsf_x, coordsf_y, coordsf_z], axis=1)
     Nf, dNdxf, wqf = computeQuad3dFemShapeFunctions_jax(coordsf)
 
@@ -1005,17 +989,17 @@ def computeCoarseTprimeTerm_jax(
     ).sum(axis=2)
 
     # Level 2
-    nem_x = nconnm_x.shape[0]
-    nem_y = nconnm_y.shape[0]
-    nem_z = nconnm_z.shape[0]
+    nem_x = nconnm[0].shape[0]
+    nem_y = nconnm[1].shape[0]
+    nem_z = nconnm[2].shape[0]
     nem = nem_x * nem_y * nem_z
-    nnm_x = xnm_x.shape[0]
-    nnm_y = xnm_y.shape[0]
+    nnm_x = xnm[0].shape[0]
+    nnm_y = xnm[1].shape[0]
 
     # Level 2 Get shape functions and weights
-    coordsm_x = xnm_x[nconnm_x[0, :]].reshape(-1, 1)
-    coordsm_y = xnm_y[nconnm_y[0, :]].reshape(-1, 1)
-    coordsm_z = xnm_z[nconnm_z[0, :]].reshape(-1, 1)
+    coordsm_x = xnm[0][nconnm[0][0, :]].reshape(-1, 1)
+    coordsm_y = xnm[1][nconnm[1][0, :]].reshape(-1, 1)
+    coordsm_z = xnm[2][nconnm[2][0, :]].reshape(-1, 1)
     coordsm = jnp.concatenate([coordsm_x, coordsm_y, coordsm_z], axis=1)
     Nm, dNdxm, wqm = computeQuad3dFemShapeFunctions_jax(coordsm)
 
@@ -1122,7 +1106,7 @@ def move_fine_mesh(x, y, z, hx, hy, hz, vx, vy, vz):
     xnf_x = x + hx * vx_
     xnf_y = y + hy * vy_
     xnf_z = z + hz * vz_
-    return xnf_x, xnf_y, xnf_z, vx_.astype(int), vy_.astype(int), vz_.astype(int)
+    return [xnf_x, xnf_y, xnf_z], vx_.astype(int), vy_.astype(int), vz_.astype(int)
 
 
 @jax.jit
@@ -1223,16 +1207,10 @@ def save_result(Level, save_str, record_lab, save_path, zoffset):
 
 @jax.jit
 def getNewTprime(
-    lnc0,
-    lnc1,
-    lnc2,
-    lcon0,
-    lcon1,
-    lcon2,
+    lnc,
+    lcon,
     lT0,
-    lov0,
-    lov1,
-    lov2,
+    lov,
     lovn0,
     lovn1,
     lovn2,
@@ -1258,9 +1236,7 @@ def getNewTprime(
     # Directly substitute into T0 to save deepcopy
     Tprime = lT0 - _
     # Find new T
-    _val = interpolatePoints_jax(
-        lnc0, lnc1, lnc2, lcon0, lcon1, lcon2, lT0, lov0, lov1, lov2
-    )
+    _val = interpolatePoints_jax(lnc, lcon, lT0, lov)
     _idx = getOverlapRegion(lovn0, lovn1, lovn2, un0, un1)
     # Directly substitute into T0 to save deepcopy
     uT = substitute_Tbar2(uT, _idx, _val)
@@ -1292,16 +1268,10 @@ def getBothNewTprimes(
     munode,
 ):
     lTprime, mT0 = getNewTprime(
-        lnc[0],
-        lnc[1],
-        lnc[2],
-        lcon[0],
-        lcon[1],
-        lcon[2],
+        lnc,
+        lcon,
         lT0,
-        lov[0],
-        lov[1],
-        lov[2],
+        lov,
         lovn[0],
         lovn[1],
         lovn[2],
@@ -1314,16 +1284,10 @@ def getBothNewTprimes(
         lmnode,
     )
     mTprime, uT0 = getNewTprime(
-        mnc[0],
-        mnc[1],
-        mnc[2],
-        mcon[0],
-        mcon[1],
-        mcon[2],
+        mnc,
+        mcon,
         mT0,
-        mov[0],
-        mov[1],
-        mov[2],
+        mov,
         movn[0],
         movn[1],
         movn[2],
@@ -1677,18 +1641,10 @@ def doExplicitTimestep(
         Level3nc, Level3con, Level3T0, Level3ne, nn3, T_amb, h_conv, 5.67e-8, vareps, Ff
     )
     Vcu, Vmu = computeCoarseTprimeTerm_jax(
-        Level3nc[0],
-        Level3nc[1],
-        Level3nc[2],
-        Level2nc[0],
-        Level2nc[1],
-        Level2nc[2],
-        Level3con[0],
-        Level3con[1],
-        Level3con[2],
-        Level2con[0],
-        Level2con[1],
-        Level2con[2],
+        Level3nc,
+        Level2nc,
+        Level3con,
+        Level2con,
         Level3Tp0,
         Level2Tp0,
         k,
@@ -1772,18 +1728,10 @@ def doExplicitTimestep(
         Level2Level1_node,
     )
     Vcu, Vmu = computeCoarseTprimeMassTerm_jax(
-        Level3nc[0],
-        Level3nc[1],
-        Level3nc[2],
-        Level2nc[0],
-        Level2nc[1],
-        Level2nc[2],
-        Level3con[0],
-        Level3con[1],
-        Level3con[2],
-        Level2con[0],
-        Level2con[1],
-        Level2con[2],
+        Level3nc,
+        Level2nc,
+        Level3con,
+        Level2con,
         Level3Tp,
         Level3Tp0,
         Level2Tp,
@@ -1914,7 +1862,7 @@ def moveLevel3Mesh(
     )
 
     ### Correction step (fine) ###
-    Level3ncx, Level3ncy, Level3ncz, _a, _b, _c = move_fine_mesh(
+    Level3nc, _a, _b, _c = move_fine_mesh(
         Level3inc[0],
         Level3inc[1],
         Level3inc[2],
@@ -1943,47 +1891,14 @@ def moveLevel3Mesh(
         )
     )
 
-    Level3T0 = interpolatePoints_jax(
-        Level1nc[0],
-        Level1nc[1],
-        Level1nc[2],
-        Level1con[0],
-        Level1con[1],
-        Level1con[2],
-        Level1T0,
-        Level3ncx,
-        Level3ncy,
-        Level3ncz,
-    )
-    _ = interpolatePoints_jax(
-        Level2nc[0],
-        Level2nc[1],
-        Level2nc[2],
-        Level2con[0],
-        Level2con[1],
-        Level2con[2],
-        Level2Tp0,
-        Level3ncx,
-        Level3ncy,
-        Level3ncz,
-    )
+    Level3T0 = interpolatePoints_jax(Level1nc, Level1con, Level1T0, Level3nc)
+    _ = interpolatePoints_jax(Level2nc, Level2con, Level2Tp0, Level3nc)
     Level3T0 = add_vectors(Level3T0, _)
 
-    Level3Tp0 = interpolatePoints_jax(
-        Level3pnc[0],
-        Level3pnc[1],
-        Level3pnc[2],
-        Level3con[0],
-        Level3con[1],
-        Level3con[2],
-        Level3Tp0,
-        Level3ncx,
-        Level3ncy,
-        Level3ncz,
-    )
+    Level3Tp0 = interpolatePoints_jax(Level3pnc, Level3con, Level3Tp0, Level3nc)
     Level3T0 = add_vectors(Level3T0, Level3Tp0)
     return (
-        [Level3ncx, Level3ncy, Level3ncz],
+        Level3nc,
         [Level3oNx, Level3oNy, Level3oNz],
         [Level3oCx, Level3oCy, Level3oCz],
         Level3T0,
@@ -2056,26 +1971,14 @@ def updateLevel3AfterMove(
     )
 
     Level2Level3_intmat, Level2Level3_node = interpolatePointsMatrix(
-        Level2nc[0],
-        Level2nc[1],
-        Level2nc[2],
-        Level2con[0],
-        Level2con[1],
-        Level2con[2],
-        Level3nc[0],
-        Level3nc[1],
-        Level3nc[2],
+        Level2nc,
+        Level2con,
+        Level3nc,
     )
     Level3Level2_intmat, Level3Level2_node = interpolatePointsMatrix(
-        Level3nc[0],
-        Level3nc[1],
-        Level3nc[2],
-        Level3con[0],
-        Level3con[1],
-        Level3con[2],
-        Level2nc[0],
-        Level2nc[1],
-        Level2nc[2],
+        Level3nc,
+        Level3con,
+        Level2nc,
     )
     return (
         Level3oN,
@@ -2128,7 +2031,7 @@ def prepLevel2Move(
     _tmp_z = (jnp.round(Level1h[2] / Level2h[2])).astype(int)
     _vvx, _vvy, _vvz = _vx, _vy, _vz
 
-    Level2ncx, Level2ncy, Level2ncz, _vx, _vy, _vz = move_fine_mesh(
+    Level2nc, _vx, _vy, _vz = move_fine_mesh(
         Level2inc[0],
         Level2inc[1],
         Level2inc[2],
@@ -2160,7 +2063,7 @@ def prepLevel2Move(
         )
     )
     return (
-        [Level2ncx, Level2ncy, Level2ncz],
+        Level2nc,
         [Level2oNx, Level2oNy, Level2oNz],
         [Level2oCx, Level2oCy, Level2oCz],
         _vx,
@@ -2174,28 +2077,16 @@ def moveLevel2Mesh(
     Level2nc, Level2con, Level2pnc, Level2Tp0, Level1nc, Level1con, Level1T0
 ):
     Level2T0 = interpolatePoints_jax(
-        Level1nc[0],
-        Level1nc[1],
-        Level1nc[2],
-        Level1con[0],
-        Level1con[1],
-        Level1con[2],
+        Level1nc,
+        Level1con,
         Level1T0,
-        Level2nc[0],
-        Level2nc[1],
-        Level2nc[2],
+        Level2nc,
     )
     Level2Tp0 = interpolatePoints_jax(
-        Level2pnc[0],
-        Level2pnc[1],
-        Level2pnc[2],
-        Level2con[0],
-        Level2con[1],
-        Level2con[2],
+        Level2pnc,
+        Level2con,
         Level2Tp0,
-        Level2nc[0],
-        Level2nc[1],
-        Level2nc[2],
+        Level2nc,
     )
     Level2T0 = add_vectors(Level2T0, Level2Tp0)
     return Level2T0, Level2Tp0
@@ -2231,26 +2122,14 @@ def updateLevel2objects(
         Level2con[2],
     )
     Level1Level2_intmat, Level1Level2_node = interpolatePointsMatrix(
-        Level1nc[0],
-        Level1nc[1],
-        Level1nc[2],
-        Level1con[0],
-        Level1con[1],
-        Level1con[2],
-        Level2nc[0],
-        Level2nc[1],
-        Level2nc[2],
+        Level1nc,
+        Level1con,
+        Level2nc,
     )
     Level2Level1_intmat, Level2Level1_node = interpolatePointsMatrix(
-        Level2nc[0],
-        Level2nc[1],
-        Level2nc[2],
-        Level2con[0],
-        Level2con[1],
-        Level2con[2],
-        Level1nc[0],
-        Level1nc[1],
-        Level1nc[2],
+        Level2nc,
+        Level2con,
+        Level1nc,
     )
     return (
         Level2T0,

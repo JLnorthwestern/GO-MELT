@@ -297,54 +297,30 @@ def testMultiscale(solver_input: dict):
     # Level1Level2_intmat: (Level2.nn, 8), from Level1 to Level2
     # Level1Level2_node: (Level2.nn, 8), nodes indexing into Level1
     Level1Level2_intmat, Level1Level2_node = interpolatePointsMatrix(
-        Level1.node_coords[0],
-        Level1.node_coords[1],
-        Level1.node_coords[2],
-        Level1.connect[0],
-        Level1.connect[1],
-        Level1.connect[2],
-        Level2.node_coords[0],
-        Level2.node_coords[1],
-        Level2.node_coords[2],
+        Level1.node_coords,
+        Level1.connect,
+        Level2.node_coords,
     )
     # Level2Level3_intmat: (Level3.nn, 8), from Level2 to Level3
     # Level2Level3_node: (Level3.nn, 8), nodes indexing into Level2
     Level2Level3_intmat, Level2Level3_node = interpolatePointsMatrix(
-        Level2.node_coords[0],
-        Level2.node_coords[1],
-        Level2.node_coords[2],
-        Level2.connect[0],
-        Level2.connect[1],
-        Level2.connect[2],
-        Level3.node_coords[0],
-        Level3.node_coords[1],
-        Level3.node_coords[2],
+        Level2.node_coords,
+        Level2.connect,
+        Level3.node_coords,
     )
     # Level2Level1_intmat: (Level1.nn, 8), from Level2 to Level1
     # Level2Level1_node: (Level1.nn, 8), nodes indexing into Level2
     Level2Level1_intmat, Level2Level1_node = interpolatePointsMatrix(
-        Level2.node_coords[0],
-        Level2.node_coords[1],
-        Level2.node_coords[2],
-        Level2.connect[0],
-        Level2.connect[1],
-        Level2.connect[2],
-        Level1.node_coords[0],
-        Level1.node_coords[1],
-        Level1.node_coords[2],
+        Level2.node_coords,
+        Level2.connect,
+        Level1.node_coords,
     )
     # Level3Level2_intmat: (Level2.nn, 8), from Level3 to Level2
     # Level3Level2_node: (Level2.nn, 8), nodes indexing into Level3
     Level3Level2_intmat, Level3Level2_node = interpolatePointsMatrix(
-        Level3.node_coords[0],
-        Level3.node_coords[1],
-        Level3.node_coords[2],
-        Level3.connect[0],
-        Level3.connect[1],
-        Level3.connect[2],
-        Level2.node_coords[0],
-        Level2.node_coords[1],
-        Level2.node_coords[2],
+        Level3.node_coords,
+        Level3.connect,
+        Level2.node_coords,
     )
 
     ### START OF THE TIME LOOP ###
