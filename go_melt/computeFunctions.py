@@ -1070,49 +1070,33 @@ def jit_constrain_v(vx, vy, vz, iE, iN, iT, iW, iS, iB):
     vx = jnp.maximum(vx, iW)
     vy = jnp.maximum(vy, iS)
     vz = jnp.maximum(vz, iB)
-    return vx, vy, vz
+    return [vx, vy, vz]
 
 
 @jax.jit
-def move_fine_mesh(x, y, z, hx, hy, hz, vx, vy, vz):
-    vx_ = jnp.round(vx / hx)
-    vy_ = jnp.round(vy / hy)
-    vz_ = jnp.round(vz / hz)
-    xnf_x = x + hx * vx_
-    xnf_y = y + hy * vy_
-    xnf_z = z + hz * vz_
+def move_fine_mesh(node_coords, element_size, v):
+    vx_ = jnp.round(v[0] / element_size[0])
+    vy_ = jnp.round(v[1] / element_size[1])
+    vz_ = jnp.round(v[2] / element_size[2])
+    xnf_x = node_coords[0] + element_size[0] * vx_
+    xnf_y = node_coords[1] + element_size[1] * vy_
+    xnf_z = node_coords[2] + element_size[2] * vz_
     return [xnf_x, xnf_y, xnf_z], [vx_.astype(int), vy_.astype(int), vz_.astype(int)]
 
 
 @jax.jit
-def update_overlap_nodes_coords(
-    overlapNodes_x_orig,
-    overlapNodes_y_orig,
-    overlapNodes_z_orig,
-    overlapCoords_x_orig,
-    overlapCoords_y_orig,
-    overlapCoords_z_orig,
-    vx_tot_con,
-    vy_tot_con,
-    vz_tot_con,
-    hc_x,
-    hc_y,
-    hc_z,
-):
-    overlapNodes_x = overlapNodes_x_orig + jnp.round(vx_tot_con / hc_x).astype(int)
-    overlapNodes_y = overlapNodes_y_orig + jnp.round(vy_tot_con / hc_y).astype(int)
-    overlapNodes_z = overlapNodes_z_orig + jnp.round(vz_tot_con / hc_z).astype(int)
-    overlapCoords_x = overlapCoords_x_orig + hc_x * jnp.round(vx_tot_con / hc_x)
-    overlapCoords_y = overlapCoords_y_orig + hc_y * jnp.round(vy_tot_con / hc_y)
-    overlapCoords_z = overlapCoords_z_orig + hc_z * jnp.round(vz_tot_con / hc_z)
-    return (
-        overlapNodes_x,
-        overlapNodes_y,
-        overlapNodes_z,
-        overlapCoords_x,
-        overlapCoords_y,
-        overlapCoords_z,
-    )
+def update_overlap_nodes_coords(overlapNodes, overlapCoords, vcon, element_size):
+    overlapNodes_new = [
+        overlapNodes[0] + jnp.round(vcon[0] / element_size[0]).astype(int),
+        overlapNodes[1] + jnp.round(vcon[1] / element_size[1]).astype(int),
+        overlapNodes[2] + jnp.round(vcon[2] / element_size[2]).astype(int),
+    ]
+    overlapCoords_new = [
+        overlapCoords[0] + element_size[0] * jnp.round(vcon[0] / element_size[0]),
+        overlapCoords[1] + element_size[1] * jnp.round(vcon[1] / element_size[1]),
+        overlapCoords[2] + element_size[2] * jnp.round(vcon[2] / element_size[2]),
+    ]
+    return overlapNodes_new, overlapCoords_new
 
 
 def add_vectors(a, b):
@@ -1767,7 +1751,7 @@ def moveLevel3Mesh(
     # Level3bx,by,bz: bounds.ix,iy,iz
 
     vtot = v - vstart
-    _Level3vx_tot_con, _Level3vy_tot_con, _Level3vz_tot_con = jit_constrain_v(
+    _Level3v_tot_con = jit_constrain_v(
         vtot[0],
         vtot[1],
         vtot[2],
@@ -1780,33 +1764,10 @@ def moveLevel3Mesh(
     )
 
     ### Correction step (fine) ###
-    Level3nc, _a = move_fine_mesh(
-        Level3inc[0],
-        Level3inc[1],
-        Level3inc[2],
-        Level2h[0],
-        Level2h[1],
-        Level2h[2],
-        _Level3vx_tot_con,
-        _Level3vy_tot_con,
-        _Level3vz_tot_con,
-    )
+    Level3nc, _a = move_fine_mesh(Level3inc, Level2h, _Level3v_tot_con)
 
-    Level3oNx, Level3oNy, Level3oNz, Level3oCx, Level3oCy, Level3oCz = (
-        update_overlap_nodes_coords(
-            Level3ooN[0],
-            Level3ooN[1],
-            Level3ooN[2],
-            Level3ooC[0],
-            Level3ooC[1],
-            Level3ooC[2],
-            _Level3vx_tot_con,
-            _Level3vy_tot_con,
-            _Level3vz_tot_con,
-            Level2h[0],
-            Level2h[1],
-            Level2h[2],
-        )
+    Level3oN, Level3oC = update_overlap_nodes_coords(
+        Level3ooN, Level3ooC, _Level3v_tot_con, Level2h
     )
 
     Level3T0 = interpolatePoints_jax(Level1nc, Level1con, Level1T0, Level3nc)
@@ -1815,14 +1776,7 @@ def moveLevel3Mesh(
 
     Level3Tp0 = interpolatePoints_jax(Level3pnc, Level3con, Level3Tp0, Level3nc)
     Level3T0 = add_vectors(Level3T0, Level3Tp0)
-    return (
-        Level3nc,
-        [Level3oNx, Level3oNy, Level3oNz],
-        [Level3oCx, Level3oCy, Level3oCz],
-        Level3T0,
-        Level3Tp0,
-        vtot,
-    )
+    return Level3nc, Level3oN, Level3oC, Level3T0, Level3Tp0, vtot
 
 
 @jax.jit
@@ -1879,7 +1833,7 @@ def prepLevel2Move(
     vtot,
     move_v,
 ):
-    _vx_tot_con, _vy_tot_con, _vz_tot_con = jit_constrain_v(
+    _v_tot_con = jit_constrain_v(
         vtot[0],
         vtot[1],
         vtot[2],
@@ -1896,17 +1850,7 @@ def prepLevel2Move(
     _tmp_z = (jnp.round(Level1h[2] / Level2h[2])).astype(int)
     _vvx, _vvy, _vvz = move_v[0], move_v[1], move_v[2]
 
-    Level2nc, move_v = move_fine_mesh(
-        Level2inc[0],
-        Level2inc[1],
-        Level2inc[2],
-        Level1h[0],
-        Level1h[1],
-        Level1h[2],
-        _vx_tot_con,
-        _vy_tot_con,
-        _vz_tot_con,
-    )
+    Level2nc, move_v = move_fine_mesh(Level2inc, Level1h, _v_tot_con)
 
     move_v[0], move_v[1], move_v[2] = (
         move_v[0] * _tmp_x,
@@ -1915,29 +1859,10 @@ def prepLevel2Move(
     )
     moveLevel2 = (_vvx != move_v[0]) | (_vvy != move_v[1]) | (_vvz != move_v[2])
 
-    Level2oNx, Level2oNy, Level2oNz, Level2oCx, Level2oCy, Level2oCz = (
-        update_overlap_nodes_coords(
-            Level2ooN[0],
-            Level2ooN[1],
-            Level2ooN[2],
-            Level2ooC[0],
-            Level2ooC[1],
-            Level2ooC[2],
-            _vx_tot_con,
-            _vy_tot_con,
-            _vz_tot_con,
-            Level1h[0],
-            Level1h[1],
-            Level1h[2],
-        )
+    Level2oN, Level2oC = update_overlap_nodes_coords(
+        Level2ooN, Level2ooC, _v_tot_con, Level1h
     )
-    return (
-        Level2nc,
-        [Level2oNx, Level2oNy, Level2oNz],
-        [Level2oCx, Level2oCy, Level2oCz],
-        move_v,
-        moveLevel2,
-    )
+    return Level2nc, Level2oN, Level2oC, move_v, moveLevel2
 
 
 def moveLevel2Mesh(
