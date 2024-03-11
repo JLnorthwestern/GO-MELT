@@ -1063,7 +1063,7 @@ def getBCindices(x):
         + (nx * ny * jnp.arange(0, nz))[jnp.newaxis, :]
     )
     nidx = nidx.reshape(-1)
-    return widx, eidx, sidx, nidx, bidx, tidx
+    return [widx, eidx, sidx, nidx, bidx, tidx]
 
 
 @jax.jit
@@ -1387,12 +1387,7 @@ def computeSolutions(
     Level1y1,
     Level1z0,
     Level1z1,
-    Level1wi,
-    Level1ei,
-    Level1si,
-    Level1ni,
-    Level1bi,
-    Level1ti,
+    Level1BC,
     Level1Level2_intmat,
     Level1Level2_node,
     Level2nc0,
@@ -1406,12 +1401,7 @@ def computeSolutions(
     Level2T0,
     Level2F,
     Level2V,
-    Level2wi,
-    Level2ei,
-    Level2si,
-    Level2ni,
-    Level2bi,
-    Level2ti,
+    Level2BC,
     Level2Level3_intmat,
     Level2Level3_node,
     Level3nc0,
@@ -1424,12 +1414,7 @@ def computeSolutions(
     Level3ne,
     Level3T0,
     Level3F,
-    Level3wi,
-    Level3ei,
-    Level3si,
-    Level3ni,
-    Level3bi,
-    Level3ti,
+    Level3BC,
     k,
     rho,
     cp,
@@ -1462,12 +1447,12 @@ def computeSolutions(
         Level1x1,
         Level1z0,
         Level1z1,
-        Level1wi,
-        Level1ei,
-        Level1si,
-        Level1ni,
-        Level1bi,
-        Level1ti,
+        Level1BC[0],
+        Level1BC[1],
+        Level1BC[2],
+        Level1BC[3],
+        Level1BC[4],
+        Level1BC[5],
     )
 
     # Compute source term for medium scale problem using fine mesh
@@ -1491,7 +1476,14 @@ def computeSolutions(
         Level2V,
     )
     FinalLevel2 = assignBCsFine(
-        Level2T, TfAll, Level2wi, Level2ei, Level2si, Level2ni, Level2bi, Level2ti
+        Level2T,
+        TfAll,
+        Level2BC[0],
+        Level2BC[1],
+        Level2BC[2],
+        Level2BC[3],
+        Level2BC[4],
+        Level2BC[5],
     )
 
     # Use Level2.T to get Dirichlet BCs for fine-scale solution
@@ -1514,7 +1506,14 @@ def computeSolutions(
         0,
     )
     FinalLevel3 = assignBCsFine(
-        FinalLevel3, TfAll, Level3wi, Level3ei, Level3si, Level3ni, Level3bi, Level3ti
+        FinalLevel3,
+        TfAll,
+        Level3BC[0],
+        Level3BC[1],
+        Level3BC[2],
+        Level3BC[3],
+        Level3BC[4],
+        Level3BC[5],
     )
     return FinalLevel1, FinalLevel2, FinalLevel3
 
@@ -1584,24 +1583,9 @@ def doExplicitTimestep(
     Level1condx,
     Level1condy,
     Level1condz,
-    Level3widx,
-    Level3eidx,
-    Level3sidx,
-    Level3nidx,
-    Level3bidx,
-    Level3tidx,
-    Level2widx,
-    Level2eidx,
-    Level2sidx,
-    Level2nidx,
-    Level2bidx,
-    Level2tidx,
-    Level1widx,
-    Level1eidx,
-    Level1sidx,
-    Level1nidx,
-    Level1bidx,
-    Level1tidx,
+    Level3BC,
+    Level2BC,
+    Level1BC,
     tmp_ne,
     tmp_nn,
     nn1,
@@ -1662,7 +1646,7 @@ def doExplicitTimestep(
     :param oN: overlapping nodes between level and lower level
     :param no: number of nodes (in one direction)
     :param condx, condy, condz: Dirichlet boundary conditions for Level1 mesh
-    :param widx, eidx, sidx...: indices for boundary surface nodes
+    :param Level#BC: indices for boundary surface nodes
     :param tmp_ne, tmp_nn: number of elements and nodes active on Level1 mesh (based on layer)
     :param nn1, nn2, nn3: total number of nodes (active and deactive)
     :param Tp0: previous correction term for Tprime
@@ -1772,12 +1756,7 @@ def doExplicitTimestep(
         Level1condy[1],
         Level1condz[0],
         Level1condz[1],
-        Level1widx,
-        Level1eidx,
-        Level1sidx,
-        Level1nidx,
-        Level1bidx,
-        Level1tidx,
+        Level1BC,
         Level1Level2_intmat,
         Level1Level2_node,
         Level2nc[0],
@@ -1791,12 +1770,7 @@ def doExplicitTimestep(
         Level2T0,
         Fm,
         Vmu,
-        Level2widx,
-        Level2eidx,
-        Level2sidx,
-        Level2nidx,
-        Level2bidx,
-        Level2tidx,
+        Level2BC,
         Level2Level3_intmat,
         Level2Level3_node,
         Level3nc[0],
@@ -1809,12 +1783,7 @@ def doExplicitTimestep(
         Level3ne,
         Level3T0,
         Ff,
-        Level3widx,
-        Level3eidx,
-        Level3sidx,
-        Level3nidx,
-        Level3bidx,
-        Level3tidx,
+        Level3BC,
         k,
         rho,
         cp,
@@ -1912,12 +1881,7 @@ def doExplicitTimestep(
         Level1condy[1],
         Level1condz[0],
         Level1condz[1],
-        Level1widx,
-        Level1eidx,
-        Level1sidx,
-        Level1nidx,
-        Level1bidx,
-        Level1tidx,
+        Level1BC,
         Level1Level2_intmat,
         Level1Level2_node,
         Level2nc[0],
@@ -1931,12 +1895,7 @@ def doExplicitTimestep(
         Level2T0,
         Fm,
         Vmu,
-        Level2widx,
-        Level2eidx,
-        Level2sidx,
-        Level2nidx,
-        Level2bidx,
-        Level2tidx,
+        Level2BC,
         Level2Level3_intmat,
         Level2Level3_node,
         Level3nc[0],
@@ -1949,12 +1908,7 @@ def doExplicitTimestep(
         Level3ne,
         Level3T0,
         Ff,
-        Level3widx,
-        Level3eidx,
-        Level3sidx,
-        Level3nidx,
-        Level3bidx,
-        Level3tidx,
+        Level3BC,
         k,
         rho,
         cp,

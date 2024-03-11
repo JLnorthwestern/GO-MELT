@@ -123,30 +123,9 @@ def testMultiscale(solver_input: dict):
     Level3.ne = Level3.elements[0] * Level3.elements[1] * Level3.elements[2]
     Level3.nn = Level3.nodes[0] * Level3.nodes[1] * Level3.nodes[2]
     # Get BC indices
-    (
-        Level1.widx,
-        Level1.eidx,
-        Level1.sidx,
-        Level1.nidx,
-        Level1.bidx,
-        Level1.tidx,
-    ) = getBCindices(Level1)
-    (
-        Level2.widx,
-        Level2.eidx,
-        Level2.sidx,
-        Level2.nidx,
-        Level2.bidx,
-        Level2.tidx,
-    ) = getBCindices(Level2)
-    (
-        Level3.widx,
-        Level3.eidx,
-        Level3.sidx,
-        Level3.nidx,
-        Level3.bidx,
-        Level3.tidx,
-    ) = getBCindices(Level3)
+    Level1.BC = getBCindices(Level1)
+    Level2.BC = getBCindices(Level2)
+    Level3.BC = getBCindices(Level3)
     ### Calculated parameters (END) ###
 
     # Find starting position and how often position changes (get initial position)
@@ -502,24 +481,9 @@ def testMultiscale(solver_input: dict):
                 Level1.conditions.x,
                 Level1.conditions.y,
                 Level1.conditions.z,
-                Level3.widx,
-                Level3.eidx,
-                Level3.sidx,
-                Level3.nidx,
-                Level3.bidx,
-                Level3.tidx,
-                Level2.widx,
-                Level2.eidx,
-                Level2.sidx,
-                Level2.nidx,
-                Level2.bidx,
-                Level2.tidx,
-                Level1.widx,
-                Level1.eidx,
-                Level1.sidx,
-                Level1.nidx,
-                Level1.bidx,
-                Level1.tidx,
+                Level3.BC,
+                Level2.BC,
+                Level1.BC,
                 tmp_ne,
                 tmp_nn,
                 Level1.nn,
