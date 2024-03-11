@@ -226,18 +226,10 @@ def testMultiscale(solver_input: dict):
         Level2dNcdLevel1,
         Level2nodesLevel1,
     ) = computeCoarseFineShapeFunctions(
-        Level1.node_coords[0],
-        Level1.node_coords[1],
-        Level1.node_coords[2],
-        Level1.connect[0],
-        Level1.connect[1],
-        Level1.connect[2],
-        Level2.node_coords[0],
-        Level2.node_coords[1],
-        Level2.node_coords[2],
-        Level2.connect[0],
-        Level2.connect[1],
-        Level2.connect[2],
+        Level1.node_coords,
+        Level1.connect,
+        Level2.node_coords,
+        Level2.connect,
     )
     # Level3NcLevel1: (Level3.ne, 8, 8), shape functions connecting Level3 to Level1
     # Level3dNcdLevel1[0]: (Level3.ne, 8, 8)
@@ -249,18 +241,10 @@ def testMultiscale(solver_input: dict):
         Level3dNcdLevel1,
         Level3nodesLevel1,
     ) = computeCoarseFineShapeFunctions(
-        Level1.node_coords[0],
-        Level1.node_coords[1],
-        Level1.node_coords[2],
-        Level1.connect[0],
-        Level1.connect[1],
-        Level1.connect[2],
-        Level3.node_coords[0],
-        Level3.node_coords[1],
-        Level3.node_coords[2],
-        Level3.connect[0],
-        Level3.connect[1],
-        Level3.connect[2],
+        Level1.node_coords,
+        Level1.connect,
+        Level3.node_coords,
+        Level3.connect,
     )
 
     # Level3NcLevel2: (Level3.ne, 8, 8), shape functions connecting Level3 to Level2
@@ -273,18 +257,10 @@ def testMultiscale(solver_input: dict):
         Level3dNcdLevel2,
         Level3nodesLevel2,
     ) = computeCoarseFineShapeFunctions(
-        Level2.node_coords[0],
-        Level2.node_coords[1],
-        Level2.node_coords[2],
-        Level2.connect[0],
-        Level2.connect[1],
-        Level2.connect[2],
-        Level3.node_coords[0],
-        Level3.node_coords[1],
-        Level3.node_coords[2],
-        Level3.connect[0],
-        Level3.connect[1],
-        Level3.connect[2],
+        Level2.node_coords,
+        Level2.connect,
+        Level3.node_coords,
+        Level3.connect,
     )
 
     # Get the interpolation matrices

@@ -78,10 +78,10 @@ def createMesh3D(x, y, z):
 
 
 @partial(jax.jit, static_argnames=["ne", "nn"])
-def meshlessKM(x, y, z, cx, cy, cz, nn, ne, k, rho, cp, dt, T, Fc, Corr):
+def meshlessKM(node_coords, conn, nn, ne, k, rho, cp, dt, T, Fc, Corr):
     """meshlessKM computes the thermal solve for the explicit timestep.
-    :param x, y, z: nodal coordinates along x, y, or z
-    :param cx, cy, cz: connectivities along x, y, or z
+    :param node_coords: nodal coordinates along x, y, or z
+    :param conn[0], conn[1], conn[2]: connectivities along x, y, or z
     :param nn, ne: number of nodes, number of elements
     :param k, rho, cp: material properties for conductivity, density, heat capacity
     :param dt: timestep
@@ -92,18 +92,18 @@ def meshlessKM(x, y, z, cx, cy, cz, nn, ne, k, rho, cp, dt, T, Fc, Corr):
     :return newT: Temperture for next timestep
     """
 
-    ne_x = jnp.size(cx, 0)
-    ne_y = jnp.size(cy, 0)
+    ne_x = jnp.size(conn[0], 0)
+    ne_y = jnp.size(conn[1], 0)
 
     nn_x = ne_x + 1
     nn_y = ne_y + 1
 
-    nen = jnp.size(cx, 1)
+    nen = jnp.size(conn[0], 1)
     ndim = 3
 
-    coords_x = x[cx[0, :]].reshape(-1, 1)
-    coords_y = y[cy[0, :]].reshape(-1, 1)
-    coords_z = z[cz[0, :]].reshape(-1, 1)
+    coords_x = node_coords[0][conn[0][0, :]].reshape(-1, 1)
+    coords_y = node_coords[1][conn[1][0, :]].reshape(-1, 1)
+    coords_z = node_coords[2][conn[2][0, :]].reshape(-1, 1)
 
     coords = jnp.concatenate([coords_x, coords_y, coords_z], axis=1)
     N, dNdx, wq = computeQuad3dFemShapeFunctions_jax(coords)
@@ -321,12 +321,8 @@ def getCoarseNodesInFineRegion(xnf, xnc):
 
 @partial(jax.jit, static_argnames=["nn1", "nn2", "nn3"])
 def computeSources(
-    xf,
-    yf,
-    zf,
-    cfx,
-    cfy,
-    cfz,
+    nodal_coords,
+    conn,
     t,
     v,
     Nc1,
@@ -343,8 +339,8 @@ def computeSources(
 ):
     """computeSources computes the integrated source term for all three levels using
     the mesh from Level 3.
-    :param xf, yf, zf: nodal coordinates
-    :param cfx, cfy, cfz: connectivity matrix
+    :param nodal_coords[0], nodal_coords[1], nodal_coords[2]: nodal coordinates
+    :param conn[0], conn[1], conn[2]: connectivity matrix
     :param _t: current time
     :param v: current position of laser (from reading file)
     :param Nc1: Level3NcLevel1, shape functions between Level 3 and Level 1 (symmetric)
@@ -361,16 +357,16 @@ def computeSources(
     :return Fm: integrated source term for Level2
     :return Ff: integrated source term for Level3
     """
-    nef_x = cfx.shape[0]
-    nef_y = cfy.shape[0]
-    nef_z = cfz.shape[0]
+    nef_x = conn[0].shape[0]
+    nef_y = conn[1].shape[0]
+    nef_z = conn[2].shape[0]
     nef = nef_x * nef_y * nef_z
     nnf_x, nnf_y = nef_x + 1, nef_y + 1
 
     # Get shape functions and weights
-    coords_x = xf[cfx[0, :]].reshape(-1, 1)
-    coords_y = yf[cfy[0, :]].reshape(-1, 1)
-    coords_z = zf[cfz[0, :]].reshape(-1, 1)
+    coords_x = nodal_coords[0][conn[0][0, :]].reshape(-1, 1)
+    coords_y = nodal_coords[1][conn[1][0, :]].reshape(-1, 1)
+    coords_z = nodal_coords[2][conn[2][0, :]].reshape(-1, 1)
     coords = jnp.concatenate([coords_x, coords_y, coords_z], axis=1)
     Nf, dNdxf, wqf = computeQuad3dFemShapeFunctions_jax(coords)
 
@@ -378,9 +374,9 @@ def computeSources(
         # Get the nodal indices for that element
         ix, iy, iz, idx = convert2XYZ(ieltf, nef_x, nef_y, nnf_x, nnf_y)
         # Get nodal coordinates for the fine element
-        coords_x = xf[cfx[ix, :]].reshape(-1, 1)
-        coords_y = yf[cfy[iy, :]].reshape(-1, 1)
-        coords_z = zf[cfz[iz, :]].reshape(-1, 1)
+        coords_x = nodal_coords[0][conn[0][ix, :]].reshape(-1, 1)
+        coords_y = nodal_coords[1][conn[1][iy, :]].reshape(-1, 1)
+        coords_z = nodal_coords[2][conn[2][iz, :]].reshape(-1, 1)
         # Do all of the quadrature points simultaneously
         x = Nf @ coords_x
         y = Nf @ coords_y
@@ -648,33 +644,14 @@ def interpolatePoints_jax(node_coords, conn, u, node_coords_new):
 
 @jax.jit
 def computeCoarseFineShapeFunctions(
-    xnc_x,
-    xnc_y,
-    xnc_z,
-    nconnc_x,
-    nconnc_y,
-    nconnc_z,
-    xnf_x,
-    xnf_y,
-    xnf_z,
-    nconnf_x,
-    nconnf_y,
-    nconnf_z,
+    node_coords_coarse, conn_coarse, node_coords_fine, conn_fine
 ):
     """computeCoarseFineShapeFunctions finds the shape functions of
     the fine scale quadrature points for the coarse element
-    :param xnc_x: nodal coordinates of global coarse in x
-    :param xnc_y: nodal coordinates of global coarse in y
-    :param xnc_z: nodal coordinates of global coarse in z
-    :param nconnc_x: indices to get x coordinates of nodes of coarse element
-    :param nconnc_y: indices to get x coordinates of nodes of coarse element
-    :param nconnc_z: indices to get x coordinates of nodes of coarse element
-    :param xnf_x: nodal coordinates of global fine in x
-    :param xnf_y: nodal coordinates of global fine in y
-    :param xnf_z: nodal coordinates of global fine in z
-    :param nconnf_x: indices to get x coordinates of nodes of fine element
-    :param nconnf_y: indices to get x coordinates of nodes of fine element
-    :param nconnf_z: indices to get x coordinates of nodes of fine element
+    :param node_coords_coarse: nodal coordinates of global coarse
+    :param conn_coarse: indices to get coordinates of nodes of coarse element
+    :param node_coords_fine: nodal coordinates of global fine
+    :param conn_fine: indices to get x coordinates of nodes of fine element
     :return Nc, dNcdx, dNcdy, dNcdz, _nodes.reshape(-1)
     :return Nc: (Num fine elements, 8 quadrature, 8), coarse shape function for fine element
     :return dNcdx: (Num fine elements, 8 quadrature, 8), coarse x-derivate shape function for fine element
@@ -683,42 +660,42 @@ def computeCoarseFineShapeFunctions(
     :return _nodes: (Num fine elements * 8 * 8), coarse nodal indices
     """
     # Get number of elements and nodes for both coarse and fine
-    nec_x = nconnc_x.shape[0]
-    nec_y = nconnc_y.shape[0]
-    nec_z = nconnc_z.shape[0]
-    nnc_x = xnc_x.shape[0]
-    nnc_y = xnc_y.shape[0]
-    nnc_z = xnc_z.shape[0]
+    nec_x = conn_coarse[0].shape[0]
+    nec_y = conn_coarse[1].shape[0]
+    nec_z = conn_coarse[2].shape[0]
+    nnc_x = node_coords_coarse[0].shape[0]
+    nnc_y = node_coords_coarse[1].shape[0]
+    nnc_z = node_coords_coarse[2].shape[0]
     nnc = nnc_x * nnc_y * nnc_z
-    nef_x = nconnf_x.shape[0]
-    nef_y = nconnf_y.shape[0]
-    nef_z = nconnf_z.shape[0]
+    nef_x = conn_fine[0].shape[0]
+    nef_y = conn_fine[1].shape[0]
+    nef_z = conn_fine[2].shape[0]
     nef = nef_x * nef_y * nef_z
-    nnf_x = xnf_x.shape[0]
-    nnf_y = xnf_y.shape[0]
+    nnf_x = node_coords_fine[0].shape[0]
+    nnf_y = node_coords_fine[1].shape[0]
 
     # Assume constant mesh sizes
-    hc_x = xnc_x[1] - xnc_x[0]
-    hc_y = xnc_y[1] - xnc_y[0]
-    hc_z = xnc_z[1] - xnc_z[0]
+    hc_x = node_coords_coarse[0][1] - node_coords_coarse[0][0]
+    hc_y = node_coords_coarse[1][1] - node_coords_coarse[1][0]
+    hc_z = node_coords_coarse[2][1] - node_coords_coarse[2][0]
 
     # Get lower bounds of meshes
-    xminc_x = xnc_x[0]
-    xminc_y = xnc_y[0]
-    xminc_z = xnc_z[0]
+    xminc_x = node_coords_coarse[0][0]
+    xminc_y = node_coords_coarse[1][0]
+    xminc_z = node_coords_coarse[2][0]
 
     # Get shape functions and weights
-    coords_x = xnf_x[nconnf_x[0, :]].reshape(-1, 1)
-    coords_y = xnf_y[nconnf_y[0, :]].reshape(-1, 1)
-    coords_z = xnf_z[nconnf_z[0, :]].reshape(-1, 1)
+    coords_x = node_coords_fine[0][conn_fine[0][0, :]].reshape(-1, 1)
+    coords_y = node_coords_fine[1][conn_fine[1][0, :]].reshape(-1, 1)
+    coords_z = node_coords_fine[2][conn_fine[2][0, :]].reshape(-1, 1)
     coords = jnp.concatenate([coords_x, coords_y, coords_z], axis=1)
     Nf, dNdxf, wqf = computeQuad3dFemShapeFunctions_jax(coords)
 
     def stepComputeCoarseFineTerm(ieltf):
         ix, iy, iz, idx = convert2XYZ(ieltf, nef_x, nef_y, nnf_x, nnf_y)
-        coords_x = xnf_x[nconnf_x[ix, :]].reshape(-1, 1)
-        coords_y = xnf_y[nconnf_y[iy, :]].reshape(-1, 1)
-        coords_z = xnf_z[nconnf_z[iz, :]].reshape(-1, 1)
+        coords_x = node_coords_fine[0][conn_fine[0][ix, :]].reshape(-1, 1)
+        coords_y = node_coords_fine[1][conn_fine[1][iy, :]].reshape(-1, 1)
+        coords_z = node_coords_fine[2][conn_fine[2][iz, :]].reshape(-1, 1)
 
         # Do all of the quadrature points simultaneously
         x = Nf @ coords_x
@@ -745,21 +722,21 @@ def computeCoarseFineShapeFunctions(
         z = z.reshape(-1)
 
         def iqLoopMass(iq):
-            nodec_x = nconnc_x[ieltc_x[iq], :].astype(int)
-            nodec_y = nconnc_y[ieltc_y[iq], :].astype(int)
-            nodec_z = nconnc_z[ieltc_z[iq], :].astype(int)
+            nodec_x = conn_coarse[0][ieltc_x[iq], :].astype(int)
+            nodec_y = conn_coarse[1][ieltc_y[iq], :].astype(int)
+            nodec_z = conn_coarse[2][ieltc_z[iq], :].astype(int)
             nodes = nodec_x + nodec_y * nnc_x + nodec_z * nnc_x * nnc_y
 
             _x = x[iq]
             _y = y[iq]
             _z = z[iq]
 
-            xc0 = xnc_x[nconnc_x[ieltc_x[iq], 0]]
-            xc1 = xnc_x[nconnc_x[ieltc_x[iq], 1]]
-            yc0 = xnc_y[nconnc_y[ieltc_y[iq], 0]]
-            yc3 = xnc_y[nconnc_y[ieltc_y[iq], 3]]
-            zc0 = xnc_z[nconnc_z[ieltc_z[iq], 0]]
-            zc5 = xnc_z[nconnc_z[ieltc_z[iq], 5]]
+            xc0 = node_coords_coarse[0][conn_coarse[0][ieltc_x[iq], 0]]
+            xc1 = node_coords_coarse[0][conn_coarse[0][ieltc_x[iq], 1]]
+            yc0 = node_coords_coarse[1][conn_coarse[1][ieltc_y[iq], 0]]
+            yc3 = node_coords_coarse[1][conn_coarse[1][ieltc_y[iq], 3]]
+            zc0 = node_coords_coarse[2][conn_coarse[2][ieltc_z[iq], 0]]
+            zc5 = node_coords_coarse[2][conn_coarse[2][ieltc_z[iq], 5]]
 
             # Evaluate shape functions associated with coarse nodes
             Nc = jnp.array(
@@ -924,17 +901,11 @@ def computeCoarseTprimeTerm_jax(
     Tprimef,
     Tprimem,  # Level3, Level2
     k,
-    dNc31dx,
-    dNc31dy,
-    dNc31dz,
+    dNc31d,
     nodes31,  # Level3 Level1
-    dNc21dx,
-    dNc21dy,
-    dNc21dz,
+    dNc21d,
     nodes21,  # Level2 Level1
-    dNc32dx,
-    dNc32dy,
-    dNc32dz,
+    dNc32d,
     nodes32,  # Level3 Level2
     nn1,
     nn2,
@@ -963,28 +934,28 @@ def computeCoarseTprimeTerm_jax(
     dTprimefdz = dNdxf[:, :, 2] @ _Tprimef
 
     _data1 = jnp.multiply(
-        jnp.multiply(-dNc31dx, dTprimefdx.T[:, :, jnp.newaxis]),
+        jnp.multiply(-dNc31d[0], dTprimefdx.T[:, :, jnp.newaxis]),
         k * wqf[jnp.newaxis, jnp.newaxis, :],
     ).sum(axis=2)
     _data1 += jnp.multiply(
-        jnp.multiply(-dNc31dy, dTprimefdy.T[:, :, jnp.newaxis]),
+        jnp.multiply(-dNc31d[1], dTprimefdy.T[:, :, jnp.newaxis]),
         k * wqf[jnp.newaxis, jnp.newaxis, :],
     ).sum(axis=2)
     _data1 += jnp.multiply(
-        jnp.multiply(-dNc31dz, dTprimefdz.T[:, :, jnp.newaxis]),
+        jnp.multiply(-dNc31d[2], dTprimefdz.T[:, :, jnp.newaxis]),
         k * wqf[jnp.newaxis, jnp.newaxis, :],
     ).sum(axis=2)
 
     _data2 = jnp.multiply(
-        jnp.multiply(-dNc32dx, dTprimefdx.T[:, :, jnp.newaxis]),
+        jnp.multiply(-dNc32d[0], dTprimefdx.T[:, :, jnp.newaxis]),
         k * wqf[jnp.newaxis, jnp.newaxis, :],
     ).sum(axis=2)
     _data2 += jnp.multiply(
-        jnp.multiply(-dNc32dy, dTprimefdy.T[:, :, jnp.newaxis]),
+        jnp.multiply(-dNc32d[1], dTprimefdy.T[:, :, jnp.newaxis]),
         k * wqf[jnp.newaxis, jnp.newaxis, :],
     ).sum(axis=2)
     _data2 += jnp.multiply(
-        jnp.multiply(-dNc32dz, dTprimefdz.T[:, :, jnp.newaxis]),
+        jnp.multiply(-dNc32d[2], dTprimefdz.T[:, :, jnp.newaxis]),
         k * wqf[jnp.newaxis, jnp.newaxis, :],
     ).sum(axis=2)
 
@@ -1011,15 +982,15 @@ def computeCoarseTprimeTerm_jax(
     dTprimemdz = dNdxm[:, :, 2] @ _Tprimem
 
     _data3 = jnp.multiply(
-        jnp.multiply(-dNc21dx, dTprimemdx.T[:, :, jnp.newaxis]),
+        jnp.multiply(-dNc21d[0], dTprimemdx.T[:, :, jnp.newaxis]),
         k * wqm[jnp.newaxis, jnp.newaxis, :],
     ).sum(axis=2)
     _data3 += jnp.multiply(
-        jnp.multiply(-dNc21dy, dTprimemdy.T[:, :, jnp.newaxis]),
+        jnp.multiply(-dNc21d[1], dTprimemdy.T[:, :, jnp.newaxis]),
         k * wqm[jnp.newaxis, jnp.newaxis, :],
     ).sum(axis=2)
     _data3 += jnp.multiply(
-        jnp.multiply(-dNc21dz, dTprimemdz.T[:, :, jnp.newaxis]),
+        jnp.multiply(-dNc21d[2], dTprimemdz.T[:, :, jnp.newaxis]),
         k * wqm[jnp.newaxis, jnp.newaxis, :],
     ).sum(axis=2)
 
@@ -1051,26 +1022,26 @@ def getBCindices(x):
 
 
 @jax.jit
-def assignBCs(RHS, TS, TN, TW, TE, TB, TT, widx, eidx, sidx, nidx, bidx, tidx):
+def assignBCs(RHS, TS, TN, TW, TE, TB, TT, BC):
     _RHS = RHS
-    _RHS = _RHS.at[sidx].set(TS)
-    _RHS = _RHS.at[nidx].set(TN)
-    _RHS = _RHS.at[widx].set(TW)
-    _RHS = _RHS.at[eidx].set(TE)
-    _RHS = _RHS.at[bidx].set(TB)
-    # _RHS = _RHS.at[tidx].set(TT)
+    _RHS = _RHS.at[BC[2]].set(TS)
+    _RHS = _RHS.at[BC[3]].set(TN)
+    _RHS = _RHS.at[BC[0]].set(TW)
+    _RHS = _RHS.at[BC[1]].set(TE)
+    _RHS = _RHS.at[BC[4]].set(TB)
+    # _RHS = _RHS.at[BC[5]].set(TT)
     return _RHS
 
 
 @jax.jit
-def assignBCsFine(RHS, TfAll, widx, eidx, sidx, nidx, bidx, tidx):
+def assignBCsFine(RHS, TfAll, BC):
     _RHS = RHS
-    _RHS = _RHS.at[sidx].set(TfAll[sidx])
-    _RHS = _RHS.at[nidx].set(TfAll[nidx])
-    _RHS = _RHS.at[widx].set(TfAll[widx])
-    _RHS = _RHS.at[eidx].set(TfAll[eidx])
-    _RHS = _RHS.at[bidx].set(TfAll[bidx])
-    # _RHS = _RHS.at[tidx].set(TfAll[tidx])
+    _RHS = _RHS.at[BC[2]].set(TfAll[BC[2]])
+    _RHS = _RHS.at[BC[3]].set(TfAll[BC[3]])
+    _RHS = _RHS.at[BC[0]].set(TfAll[BC[0]])
+    _RHS = _RHS.at[BC[1]].set(TfAll[BC[1]])
+    _RHS = _RHS.at[BC[4]].set(TfAll[BC[4]])
+    # _RHS = _RHS.at[BC[5]].set(TfAll[BC[5]])
     return _RHS
 
 
@@ -1354,12 +1325,8 @@ def computeSolutions(
     T_amb,
 ):
     Level1T = meshlessKM(
-        Level1nc[0],
-        Level1nc[1],
-        Level1nc[2],
-        Level1con[0],
-        Level1con[1],
-        Level1con[2],
+        Level1nc,
+        Level1con,
         Level1nn,
         Level1tmpne,
         k,
@@ -1379,24 +1346,15 @@ def computeSolutions(
         Level1x1,
         Level1z0,
         Level1z1,
-        Level1BC[0],
-        Level1BC[1],
-        Level1BC[2],
-        Level1BC[3],
-        Level1BC[4],
-        Level1BC[5],
+        Level1BC,
     )
 
     # Compute source term for medium scale problem using fine mesh
     TfAll = interpolate_w_matrix(Level1Level2_intmat, Level1Level2_node, FinalLevel1)
     # Avoids assembling LHS matrix
     Level2T = meshlessKM(
-        Level2nc[0],
-        Level2nc[1],
-        Level2nc[2],
-        Level2con[0],
-        Level2con[1],
-        Level2con[2],
+        Level2nc,
+        Level2con,
         Level2nn,
         Level2ne,
         k,
@@ -1407,26 +1365,13 @@ def computeSolutions(
         Level2F,
         Level2V,
     )
-    FinalLevel2 = assignBCsFine(
-        Level2T,
-        TfAll,
-        Level2BC[0],
-        Level2BC[1],
-        Level2BC[2],
-        Level2BC[3],
-        Level2BC[4],
-        Level2BC[5],
-    )
+    FinalLevel2 = assignBCsFine(Level2T, TfAll, Level2BC)
 
     # Use Level2.T to get Dirichlet BCs for fine-scale solution
     TfAll = interpolate_w_matrix(Level2Level3_intmat, Level2Level3_node, FinalLevel2)
     FinalLevel3 = meshlessKM(
-        Level3nc[0],
-        Level3nc[1],
-        Level3nc[2],
-        Level3con[0],
-        Level3con[1],
-        Level3con[2],
+        Level3nc,
+        Level3con,
         Level3nn,
         Level3ne,
         k,
@@ -1437,16 +1382,7 @@ def computeSolutions(
         Level3F,
         0,
     )
-    FinalLevel3 = assignBCsFine(
-        FinalLevel3,
-        TfAll,
-        Level3BC[0],
-        Level3BC[1],
-        Level3BC[2],
-        Level3BC[3],
-        Level3BC[4],
-        Level3BC[5],
-    )
+    FinalLevel3 = assignBCsFine(FinalLevel3, TfAll, Level3BC)
     return FinalLevel1, FinalLevel2, FinalLevel3
 
 
@@ -1603,12 +1539,8 @@ def doExplicitTimestep(
     :return Level2Tp0: Temperature correction from Level 2 (assigned to previous)
     """
     Fc, Fm, Ff = computeSources(
-        Level3nc[0],
-        Level3nc[1],
-        Level3nc[2],
-        Level3con[0],
-        Level3con[1],
-        Level3con[2],
+        Level3nc,
+        Level3con,
         _t,
         v,
         Level3NcLevel1,
@@ -1640,17 +1572,11 @@ def doExplicitTimestep(
         Level3Tp0,
         Level2Tp0,
         k,
-        Level3dNcdLevel1[0],
-        Level3dNcdLevel1[1],
-        Level3dNcdLevel1[2],
+        Level3dNcdLevel1,
         Level3nodesLevel1,
-        Level2dNcdLevel1[0],
-        Level2dNcdLevel1[1],
-        Level2dNcdLevel1[2],
+        Level2dNcdLevel1,
         Level2nodesLevel1,
-        Level3dNcdLevel2[0],
-        Level3dNcdLevel2[1],
-        Level3dNcdLevel2[2],
+        Level3dNcdLevel2,
         Level3nodesLevel2,
         nn1,
         nn2,
@@ -1924,18 +1850,10 @@ def updateLevel3AfterMove(
         Level3dNcdLevel1,
         Level3nodesLevel1,
     ) = computeCoarseFineShapeFunctions(
-        Level1nc[0],
-        Level1nc[1],
-        Level1nc[2],
-        Level1con[0],
-        Level1con[1],
-        Level1con[2],
-        Level3nc[0],
-        Level3nc[1],
-        Level3nc[2],
-        Level3con[0],
-        Level3con[1],
-        Level3con[2],
+        Level1nc,
+        Level1con,
+        Level3nc,
+        Level3con,
     )
 
     # Move Level3 with respect to Level2
@@ -1944,18 +1862,10 @@ def updateLevel3AfterMove(
         Level3dNcdLevel2,
         Level3nodesLevel2,
     ) = computeCoarseFineShapeFunctions(
-        Level2nc[0],
-        Level2nc[1],
-        Level2nc[2],
-        Level2con[0],
-        Level2con[1],
-        Level2con[2],
-        Level3nc[0],
-        Level3nc[1],
-        Level3nc[2],
-        Level3con[0],
-        Level3con[1],
-        Level3con[2],
+        Level2nc,
+        Level2con,
+        Level3nc,
+        Level3con,
     )
 
     Level2Level3_intmat, Level2Level3_node = interpolatePointsMatrix(
@@ -2085,33 +1995,14 @@ def updateLevel2objects(
         Level2nc, Level2con, Level2pnc, Level2Tp0, Level1nc, Level1con, Level1T0
     )
     # If mesh moves, recalculate shape functions
-    (
-        Level2NcLevel1,
-        Level2dNcdLevel1,
-        Level2nodesLevel1,
-    ) = computeCoarseFineShapeFunctions(
-        Level1nc[0],
-        Level1nc[1],
-        Level1nc[2],
-        Level1con[0],
-        Level1con[1],
-        Level1con[2],
-        Level2nc[0],
-        Level2nc[1],
-        Level2nc[2],
-        Level2con[0],
-        Level2con[1],
-        Level2con[2],
+    Level2NcLevel1, Level2dNcdLevel1, Level2nodesLevel1 = (
+        computeCoarseFineShapeFunctions(Level1nc, Level1con, Level2nc, Level2con)
     )
     Level1Level2_intmat, Level1Level2_node = interpolatePointsMatrix(
-        Level1nc,
-        Level1con,
-        Level2nc,
+        Level1nc, Level1con, Level2nc
     )
     Level2Level1_intmat, Level2Level1_node = interpolatePointsMatrix(
-        Level2nc,
-        Level2con,
-        Level1nc,
+        Level2nc, Level2con, Level1nc
     )
     return (
         Level2T0,
