@@ -1081,7 +1081,7 @@ def move_fine_mesh(x, y, z, hx, hy, hz, vx, vy, vz):
     xnf_x = x + hx * vx_
     xnf_y = y + hy * vy_
     xnf_z = z + hz * vz_
-    return [xnf_x, xnf_y, xnf_z], vx_.astype(int), vy_.astype(int), vz_.astype(int)
+    return [xnf_x, xnf_y, xnf_z], [vx_.astype(int), vy_.astype(int), vz_.astype(int)]
 
 
 @jax.jit
@@ -1780,7 +1780,7 @@ def moveLevel3Mesh(
     )
 
     ### Correction step (fine) ###
-    Level3nc, _a, _b, _c = move_fine_mesh(
+    Level3nc, _a = move_fine_mesh(
         Level3inc[0],
         Level3inc[1],
         Level3inc[2],
@@ -1827,56 +1827,29 @@ def moveLevel3Mesh(
 
 @jax.jit
 def updateLevel3AfterMove(
-    Level3nc,
-    Level3con,
-    Level3oN,
-    Level2nc,
-    Level2con,
-    Level1nc,
-    Level1con,
-    vx,
-    vy,
-    vz,
+    Level3nc, Level3con, Level3oN, Level2nc, Level2con, Level1nc, Level1con, move_v
 ):
     Level3oN[0], Level3oN[1], Level3oN[2] = (
-        Level3oN[0] - vx,
-        Level3oN[1] - vy,
-        Level3oN[2] - vz,
+        Level3oN[0] - move_v[0],
+        Level3oN[1] - move_v[1],
+        Level3oN[2] - move_v[2],
     )
 
     # If mesh moves, recalculate shape functions
-    (
-        Level3NcLevel1,
-        Level3dNcdLevel1,
-        Level3nodesLevel1,
-    ) = computeCoarseFineShapeFunctions(
-        Level1nc,
-        Level1con,
-        Level3nc,
-        Level3con,
+    (Level3NcLevel1, Level3dNcdLevel1, Level3nodesLevel1) = (
+        computeCoarseFineShapeFunctions(Level1nc, Level1con, Level3nc, Level3con)
     )
 
     # Move Level3 with respect to Level2
-    (
-        Level3NcLevel2,
-        Level3dNcdLevel2,
-        Level3nodesLevel2,
-    ) = computeCoarseFineShapeFunctions(
-        Level2nc,
-        Level2con,
-        Level3nc,
-        Level3con,
+    (Level3NcLevel2, Level3dNcdLevel2, Level3nodesLevel2) = (
+        computeCoarseFineShapeFunctions(Level2nc, Level2con, Level3nc, Level3con)
     )
 
     Level2Level3_intmat, Level2Level3_node = interpolatePointsMatrix(
-        Level2nc,
-        Level2con,
-        Level3nc,
+        Level2nc, Level2con, Level3nc
     )
     Level3Level2_intmat, Level3Level2_node = interpolatePointsMatrix(
-        Level3nc,
-        Level3con,
-        Level2nc,
+        Level3nc, Level3con, Level2nc
     )
     return (
         Level3oN,
@@ -1904,9 +1877,7 @@ def prepLevel2Move(
     Level2bz,
     Level1h,
     vtot,
-    _vx,
-    _vy,
-    _vz,
+    move_v,
 ):
     _vx_tot_con, _vy_tot_con, _vz_tot_con = jit_constrain_v(
         vtot[0],
@@ -1923,9 +1894,9 @@ def prepLevel2Move(
     _tmp_x = (jnp.round(Level1h[0] / Level2h[0])).astype(int)
     _tmp_y = (jnp.round(Level1h[1] / Level2h[1])).astype(int)
     _tmp_z = (jnp.round(Level1h[2] / Level2h[2])).astype(int)
-    _vvx, _vvy, _vvz = _vx, _vy, _vz
+    _vvx, _vvy, _vvz = move_v[0], move_v[1], move_v[2]
 
-    Level2nc, _vx, _vy, _vz = move_fine_mesh(
+    Level2nc, move_v = move_fine_mesh(
         Level2inc[0],
         Level2inc[1],
         Level2inc[2],
@@ -1937,8 +1908,12 @@ def prepLevel2Move(
         _vz_tot_con,
     )
 
-    _vx, _vy, _vz = _vx * _tmp_x, _vy * _tmp_y, _vz * _tmp_z
-    moveLevel2 = (_vvx != _vx) | (_vvy != _vy) | (_vvz != _vz)
+    move_v[0], move_v[1], move_v[2] = (
+        move_v[0] * _tmp_x,
+        move_v[1] * _tmp_y,
+        move_v[2] * _tmp_z,
+    )
+    moveLevel2 = (_vvx != move_v[0]) | (_vvy != move_v[1]) | (_vvz != move_v[2])
 
     Level2oNx, Level2oNy, Level2oNz, Level2oCx, Level2oCy, Level2oCz = (
         update_overlap_nodes_coords(
@@ -1960,9 +1935,7 @@ def prepLevel2Move(
         Level2nc,
         [Level2oNx, Level2oNy, Level2oNz],
         [Level2oCx, Level2oCy, Level2oCz],
-        _vx,
-        _vy,
-        _vz,
+        move_v,
         moveLevel2,
     )
 
@@ -1970,18 +1943,8 @@ def prepLevel2Move(
 def moveLevel2Mesh(
     Level2nc, Level2con, Level2pnc, Level2Tp0, Level1nc, Level1con, Level1T0
 ):
-    Level2T0 = interpolatePoints_jax(
-        Level1nc,
-        Level1con,
-        Level1T0,
-        Level2nc,
-    )
-    Level2Tp0 = interpolatePoints_jax(
-        Level2pnc,
-        Level2con,
-        Level2Tp0,
-        Level2nc,
-    )
+    Level2T0 = interpolatePoints_jax(Level1nc, Level1con, Level1T0, Level2nc)
+    Level2Tp0 = interpolatePoints_jax(Level2pnc, Level2con, Level2Tp0, Level2nc)
     Level2T0 = add_vectors(Level2T0, Level2Tp0)
     return Level2T0, Level2Tp0
 
@@ -2044,9 +2007,7 @@ def moveEverything(
     Level2by,
     Level2bz,
     Level1h,
-    _vx,
-    _vy,
-    _vz,
+    move_v,
 ):
     Level3nc, Level3oN, Level3oC, Level3T0, Level3Tp0, vtot = moveLevel3Mesh(
         v,
@@ -2068,7 +2029,7 @@ def moveEverything(
         Level1con,
         Level1T0,
     )
-    Level2nc, Level2oN, Level2oC, _vx, _vy, _vz, moveLevel2 = prepLevel2Move(
+    Level2nc, Level2oN, Level2oC, move_v, moveLevel2 = prepLevel2Move(
         Level2inc,
         Level2h,
         Level2ooN,
@@ -2078,9 +2039,7 @@ def moveEverything(
         Level2bz,
         Level1h,
         vtot,
-        _vx,
-        _vy,
-        _vz,
+        move_v,
     )
     (
         Level2T0,
@@ -2108,16 +2067,7 @@ def moveEverything(
         Level3Level2_intmat,
         Level3Level2_node,
     ) = updateLevel3AfterMove(
-        Level3nc,
-        Level3con,
-        Level3oN,
-        Level2nc,
-        Level2con,
-        Level1nc,
-        Level1con,
-        _vx,
-        _vy,
-        _vz,
+        Level3nc, Level3con, Level3oN, Level2nc, Level2con, Level1nc, Level1con, move_v
     )
     return (
         Level3nc,
@@ -2148,7 +2098,5 @@ def moveEverything(
         Level2Level3_node,
         Level3Level2_intmat,
         Level3Level2_node,
-        _vx,
-        _vy,
-        _vz,
+        move_v,
     )

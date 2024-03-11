@@ -300,12 +300,11 @@ def testMultiscale(solver_input: dict):
         save_result(Level2, "Level2_", record_lab, save_path, 1e-3)
         save_result(Level3, "Level3_", record_lab, save_path, 0)
 
-    _vx, _vy, _vz = 0, 0, 0
-
     tool_path_file = open(tool_path_input, "r")
 
     vprev = 1e6
     vprev1 = 1e6
+    move_v = [0, 0, 0]
     force_move = False
     for _v in tool_path_file:
         tstart_loop = time.time()
@@ -362,9 +361,7 @@ def testMultiscale(solver_input: dict):
                 Level2Level3_node,
                 Level3Level2_intmat,
                 Level3Level2_node,
-                _vx,
-                _vy,
-                _vz,
+                move_v,
             ) = moveEverything(
                 v,
                 vstart,
@@ -391,9 +388,7 @@ def testMultiscale(solver_input: dict):
                 Level2.bounds.iy,
                 Level2.bounds.iz,
                 Level1.h,
-                _vx,
-                _vy,
-                _vz,
+                move_v,
             )
 
         if explicit:
