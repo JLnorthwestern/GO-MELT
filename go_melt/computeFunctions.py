@@ -828,7 +828,7 @@ def computeCoarseFineShapeFunctions(
     test = jax.experimental.sparse.BCOO(
         [jnp.ones(_nodes.size), indices], shape=(nnc, _nodes.size)
     )
-    return Nc, dNcdx, dNcdy, dNcdz, test
+    return Nc, [dNcdx, dNcdy, dNcdz], test
 
 
 @partial(jax.jit, static_argnames=["nn1", "nn2"])
@@ -1080,10 +1080,14 @@ def bincount(N, D, nn):
 
 
 @jax.jit
-def getOverlapRegion(x, y, z, nx, ny):
-    _x = jnp.tile(x, y.shape[0] * z.shape[0]).reshape(-1)
-    _y = jnp.repeat(jnp.tile(y, z.shape[0]), x.shape[0]).reshape(-1)
-    _z = jnp.repeat(z, x.shape[0] * y.shape[0])
+def getOverlapRegion(node_coords, nx, ny):
+    _x = jnp.tile(
+        node_coords[0], node_coords[1].shape[0] * node_coords[2].shape[0]
+    ).reshape(-1)
+    _y = jnp.repeat(
+        jnp.tile(node_coords[1], node_coords[2].shape[0]), node_coords[0].shape[0]
+    ).reshape(-1)
+    _z = jnp.repeat(node_coords[2], node_coords[0].shape[0] * node_coords[1].shape[0])
     return _x + _y * nx + _z * nx * ny
 
 
@@ -1211,9 +1215,7 @@ def getNewTprime(
     lcon,
     lT0,
     lov,
-    lovn0,
-    lovn1,
-    lovn2,
+    lovn,
     uT,
     un0,
     un1,
@@ -1237,7 +1239,7 @@ def getNewTprime(
     Tprime = lT0 - _
     # Find new T
     _val = interpolatePoints_jax(lnc, lcon, lT0, lov)
-    _idx = getOverlapRegion(lovn0, lovn1, lovn2, un0, un1)
+    _idx = getOverlapRegion(lovn, un0, un1)
     # Directly substitute into T0 to save deepcopy
     uT = substitute_Tbar2(uT, _idx, _val)
     return Tprime, uT
@@ -1272,9 +1274,7 @@ def getBothNewTprimes(
         lcon,
         lT0,
         lov,
-        lovn[0],
-        lovn[1],
-        lovn[2],
+        lovn,
         mT,
         mn[0],
         mn[1],
@@ -1288,9 +1288,7 @@ def getBothNewTprimes(
         mcon,
         mT0,
         mov,
-        movn[0],
-        movn[1],
-        movn[2],
+        movn,
         uT,
         un[0],
         un[1],
@@ -1533,17 +1531,11 @@ def doExplicitTimestep(
     Level3NcLevel1,
     Level3NcLevel2,
     Level2NcLevel1,
-    Level3dNcdxLevel1,
-    Level3dNcdyLevel1,
-    Level3dNcdzLevel1,
+    Level3dNcdLevel1,
     Level3nodesLevel1,
-    Level3dNcdxLevel2,
-    Level3dNcdyLevel2,
-    Level3dNcdzLevel2,
+    Level3dNcdLevel2,
     Level3nodesLevel2,
-    Level2dNcdxLevel1,
-    Level2dNcdyLevel1,
-    Level2dNcdzLevel1,
+    Level2dNcdLevel1,
     Level2nodesLevel1,
     Level2Level3_intmat,
     Level2Level3_node,
@@ -1586,7 +1578,7 @@ def doExplicitTimestep(
     :param Tp0: previous correction term for Tprime
     :param T0: previous temperature
     :param Level3NcLevel1: shape functions from Level3 to Level1
-    :param Level3dNcdxLevel1: derivative of shape functions from Level3 to Level1
+    :param Level3dNcdLevel1: derivative of shape functions from Level3 to Level1
     :param Level3nodesLevel1: node indices for Level3 to Level 1 Tprime calculations
     :param Level2Level3_intmat: interpolation matrix from Level2 to Level3
     :param Level2Level3_node: nodes indexing into Level2 for interpolation
@@ -1648,17 +1640,17 @@ def doExplicitTimestep(
         Level3Tp0,
         Level2Tp0,
         k,
-        Level3dNcdxLevel1,
-        Level3dNcdyLevel1,
-        Level3dNcdzLevel1,
+        Level3dNcdLevel1[0],
+        Level3dNcdLevel1[1],
+        Level3dNcdLevel1[2],
         Level3nodesLevel1,
-        Level2dNcdxLevel1,
-        Level2dNcdyLevel1,
-        Level2dNcdzLevel1,
+        Level2dNcdLevel1[0],
+        Level2dNcdLevel1[1],
+        Level2dNcdLevel1[2],
         Level2nodesLevel1,
-        Level3dNcdxLevel2,
-        Level3dNcdyLevel2,
-        Level3dNcdzLevel2,
+        Level3dNcdLevel2[0],
+        Level3dNcdLevel2[1],
+        Level3dNcdLevel2[2],
         Level3nodesLevel2,
         nn1,
         nn2,
@@ -1929,9 +1921,7 @@ def updateLevel3AfterMove(
     # If mesh moves, recalculate shape functions
     (
         Level3NcLevel1,
-        Level3dNcdxLevel1,
-        Level3dNcdyLevel1,
-        Level3dNcdzLevel1,
+        Level3dNcdLevel1,
         Level3nodesLevel1,
     ) = computeCoarseFineShapeFunctions(
         Level1nc[0],
@@ -1951,9 +1941,7 @@ def updateLevel3AfterMove(
     # Move Level3 with respect to Level2
     (
         Level3NcLevel2,
-        Level3dNcdxLevel2,
-        Level3dNcdyLevel2,
-        Level3dNcdzLevel2,
+        Level3dNcdLevel2,
         Level3nodesLevel2,
     ) = computeCoarseFineShapeFunctions(
         Level2nc[0],
@@ -1983,14 +1971,10 @@ def updateLevel3AfterMove(
     return (
         Level3oN,
         Level3NcLevel1,
-        Level3dNcdxLevel1,
-        Level3dNcdyLevel1,
-        Level3dNcdzLevel1,
+        Level3dNcdLevel1,
         Level3nodesLevel1,
         Level3NcLevel2,
-        Level3dNcdxLevel2,
-        Level3dNcdyLevel2,
-        Level3dNcdzLevel2,
+        Level3dNcdLevel2,
         Level3nodesLevel2,
         Level2Level3_intmat,
         Level2Level3_node,
@@ -2103,9 +2087,7 @@ def updateLevel2objects(
     # If mesh moves, recalculate shape functions
     (
         Level2NcLevel1,
-        Level2dNcdxLevel1,
-        Level2dNcdyLevel1,
-        Level2dNcdzLevel1,
+        Level2dNcdLevel1,
         Level2nodesLevel1,
     ) = computeCoarseFineShapeFunctions(
         Level1nc[0],
@@ -2135,9 +2117,7 @@ def updateLevel2objects(
         Level2T0,
         Level2Tp0,
         Level2NcLevel1,
-        Level2dNcdxLevel1,
-        Level2dNcdyLevel1,
-        Level2dNcdzLevel1,
+        Level2dNcdLevel1,
         Level2nodesLevel1,
         Level1Level2_intmat,
         Level1Level2_node,
@@ -2215,9 +2195,7 @@ def moveEverything(
         Level2T0,
         Level2Tp0,
         Level2NcLevel1,
-        Level2dNcdxLevel1,
-        Level2dNcdyLevel1,
-        Level2dNcdzLevel1,
+        Level2dNcdLevel1,
         Level2nodesLevel1,
         Level1Level2_intmat,
         Level1Level2_node,
@@ -2229,14 +2207,10 @@ def moveEverything(
     (
         Level3oN,
         Level3NcLevel1,
-        Level3dNcdxLevel1,
-        Level3dNcdyLevel1,
-        Level3dNcdzLevel1,
+        Level3dNcdLevel1,
         Level3nodesLevel1,
         Level3NcLevel2,
-        Level3dNcdxLevel2,
-        Level3dNcdyLevel2,
-        Level3dNcdzLevel2,
+        Level3dNcdLevel2,
         Level3nodesLevel2,
         Level2Level3_intmat,
         Level2Level3_node,
@@ -2267,23 +2241,17 @@ def moveEverything(
         Level2T0,
         Level2Tp0,
         Level2NcLevel1,
-        Level2dNcdxLevel1,
-        Level2dNcdyLevel1,
-        Level2dNcdzLevel1,
+        Level2dNcdLevel1,
         Level2nodesLevel1,
         Level1Level2_intmat,
         Level1Level2_node,
         Level2Level1_intmat,
         Level2Level1_node,
         Level3NcLevel1,
-        Level3dNcdxLevel1,
-        Level3dNcdyLevel1,
-        Level3dNcdzLevel1,
+        Level3dNcdLevel1,
         Level3nodesLevel1,
         Level3NcLevel2,
-        Level3dNcdxLevel2,
-        Level3dNcdyLevel2,
-        Level3dNcdzLevel2,
+        Level3dNcdLevel2,
         Level3nodesLevel2,
         Level2Level3_intmat,
         Level2Level3_node,

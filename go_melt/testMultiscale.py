@@ -217,15 +217,13 @@ def testMultiscale(solver_input: dict):
 
     # Get the initial coarse shape functions for correction terms
     # Level2NcLevel1: (Level2.ne, 8, 8), shape functions connecting Level2 to Level1
-    # Level2dNcdxLevel1: (Level2.ne, 8, 8)
-    # Level2dNcdyLevel1: (Level2.ne, 8, 8)
-    # Level2dNcdzLevel1: (Level2.ne, 8, 8)
+    # Level2dNcdLevel1[0]: (Level2.ne, 8, 8)
+    # Level2dNcdLevel1[1]: (Level2.ne, 8, 8)
+    # Level2dNcdLevel1[2]: (Level2.ne, 8, 8)
     # Level2nodesLevel1: (Level2.ne * 8 * 8), indexing into Level2
     (
         Level2NcLevel1,
-        Level2dNcdxLevel1,
-        Level2dNcdyLevel1,
-        Level2dNcdzLevel1,
+        Level2dNcdLevel1,
         Level2nodesLevel1,
     ) = computeCoarseFineShapeFunctions(
         Level1.node_coords[0],
@@ -242,15 +240,13 @@ def testMultiscale(solver_input: dict):
         Level2.connect[2],
     )
     # Level3NcLevel1: (Level3.ne, 8, 8), shape functions connecting Level3 to Level1
-    # Level3dNcdxLevel1: (Level3.ne, 8, 8)
-    # Level3dNcdyLevel1: (Level3.ne, 8, 8)
-    # Level3dNcdzLevel1: (Level3.ne, 8, 8)
+    # Level3dNcdLevel1[0]: (Level3.ne, 8, 8)
+    # Level3dNcdLevel1[1]: (Level3.ne, 8, 8)
+    # Level3dNcdLevel1[2]: (Level3.ne, 8, 8)
     # Level3nodesLevel1: (Level3.ne * 8 * 8), indexing into Level3
     (
         Level3NcLevel1,
-        Level3dNcdxLevel1,
-        Level3dNcdyLevel1,
-        Level3dNcdzLevel1,
+        Level3dNcdLevel1,
         Level3nodesLevel1,
     ) = computeCoarseFineShapeFunctions(
         Level1.node_coords[0],
@@ -268,15 +264,13 @@ def testMultiscale(solver_input: dict):
     )
 
     # Level3NcLevel2: (Level3.ne, 8, 8), shape functions connecting Level3 to Level2
-    # Level3dNcdxLevel2: (Level3.ne, 8, 8)
-    # Level3dNcdyLevel2: (Level3.ne, 8, 8)
-    # Level3dNcdzLevel2: (Level3.ne, 8, 8)
+    # Level3dNcdLevel2[0]: (Level3.ne, 8, 8)
+    # Level3dNcdLevel2[1]: (Level3.ne, 8, 8)
+    # Level3dNcdLevel2[2]: (Level3.ne, 8, 8)
     # Level3nodesLevel2: (Level3.ne * 8 * 8), indexing into Level3
     (
         Level3NcLevel2,
-        Level3dNcdxLevel2,
-        Level3dNcdyLevel2,
-        Level3dNcdzLevel2,
+        Level3dNcdLevel2,
         Level3nodesLevel2,
     ) = computeCoarseFineShapeFunctions(
         Level2.node_coords[0],
@@ -376,23 +370,17 @@ def testMultiscale(solver_input: dict):
                 Level2.T0,
                 Level2.Tprime0,
                 Level2NcLevel1,
-                Level2dNcdxLevel1,
-                Level2dNcdyLevel1,
-                Level2dNcdzLevel1,
+                Level2dNcdLevel1,
                 Level2nodesLevel1,
                 Level1Level2_intmat,
                 Level1Level2_node,
                 Level2Level1_intmat,
                 Level2Level1_node,
                 Level3NcLevel1,
-                Level3dNcdxLevel1,
-                Level3dNcdyLevel1,
-                Level3dNcdzLevel1,
+                Level3dNcdLevel1,
                 Level3nodesLevel1,
                 Level3NcLevel2,
-                Level3dNcdxLevel2,
-                Level3dNcdyLevel2,
-                Level3dNcdzLevel2,
+                Level3dNcdLevel2,
                 Level3nodesLevel2,
                 Level2Level3_intmat,
                 Level2Level3_node,
@@ -473,17 +461,11 @@ def testMultiscale(solver_input: dict):
                 Level3NcLevel1,
                 Level3NcLevel2,
                 Level2NcLevel1,
-                Level3dNcdxLevel1,
-                Level3dNcdyLevel1,
-                Level3dNcdzLevel1,
+                Level3dNcdLevel1,
                 Level3nodesLevel1,
-                Level3dNcdxLevel2,
-                Level3dNcdyLevel2,
-                Level3dNcdzLevel2,
+                Level3dNcdLevel2,
                 Level3nodesLevel2,
-                Level2dNcdxLevel1,
-                Level2dNcdyLevel1,
-                Level2dNcdzLevel1,
+                Level2dNcdLevel1,
                 Level2nodesLevel1,
                 Level2Level3_intmat,
                 Level2Level3_node,
