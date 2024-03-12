@@ -215,61 +215,6 @@ def testMultiscale(solver_input: dict):
     time_inc = 0
     record_inc = 0
 
-    # Get the initial coarse shape functions for correction terms
-    # Level2NcLevel1: (Level2.ne, 8, 8), shape functions connecting Level2 to Level1
-    # Level2dNcdLevel1[0]: (Level2.ne, 8, 8)
-    # Level2dNcdLevel1[1]: (Level2.ne, 8, 8)
-    # Level2dNcdLevel1[2]: (Level2.ne, 8, 8)
-    # Level2nodesLevel1: (Level2.ne * 8 * 8), indexing into Level2
-    Level2NcLevel1, Level2dNcdLevel1, Level2nodesLevel1 = (
-        computeCoarseFineShapeFunctions(
-            Level1.node_coords, Level1.connect, Level2.node_coords, Level2.connect
-        )
-    )
-    # Level3NcLevel1: (Level3.ne, 8, 8), shape functions connecting Level3 to Level1
-    # Level3dNcdLevel1[0]: (Level3.ne, 8, 8)
-    # Level3dNcdLevel1[1]: (Level3.ne, 8, 8)
-    # Level3dNcdLevel1[2]: (Level3.ne, 8, 8)
-    # Level3nodesLevel1: (Level3.ne * 8 * 8), indexing into Level3
-    Level3NcLevel1, Level3dNcdLevel1, Level3nodesLevel1 = (
-        computeCoarseFineShapeFunctions(
-            Level1.node_coords, Level1.connect, Level3.node_coords, Level3.connect
-        )
-    )
-
-    # Level3NcLevel2: (Level3.ne, 8, 8), shape functions connecting Level3 to Level2
-    # Level3dNcdLevel2[0]: (Level3.ne, 8, 8)
-    # Level3dNcdLevel2[1]: (Level3.ne, 8, 8)
-    # Level3dNcdLevel2[2]: (Level3.ne, 8, 8)
-    # Level3nodesLevel2: (Level3.ne * 8 * 8), indexing into Level3
-    Level3NcLevel2, Level3dNcdLevel2, Level3nodesLevel2 = (
-        computeCoarseFineShapeFunctions(
-            Level2.node_coords, Level2.connect, Level3.node_coords, Level3.connect
-        )
-    )
-
-    # Get the interpolation matrices
-    # Level1Level2_intmat: (Level2.nn, 8), from Level1 to Level2
-    # Level1Level2_node: (Level2.nn, 8), nodes indexing into Level1
-    Level1Level2_intmat, Level1Level2_node = interpolatePointsMatrix(
-        Level1.node_coords, Level1.connect, Level2.node_coords
-    )
-    # Level2Level3_intmat: (Level3.nn, 8), from Level2 to Level3
-    # Level2Level3_node: (Level3.nn, 8), nodes indexing into Level2
-    Level2Level3_intmat, Level2Level3_node = interpolatePointsMatrix(
-        Level2.node_coords, Level2.connect, Level3.node_coords
-    )
-    # Level2Level1_intmat: (Level1.nn, 8), from Level2 to Level1
-    # Level2Level1_node: (Level1.nn, 8), nodes indexing into Level2
-    Level2Level1_intmat, Level2Level1_node = interpolatePointsMatrix(
-        Level2.node_coords, Level2.connect, Level1.node_coords
-    )
-    # Level3Level2_intmat: (Level2.nn, 8), from Level3 to Level2
-    # Level3Level2_node: (Level2.nn, 8), nodes indexing into Level3
-    Level3Level2_intmat, Level3Level2_node = interpolatePointsMatrix(
-        Level3.node_coords, Level3.connect, Level2.node_coords
-    )
-
     ### START OF THE TIME LOOP ###
     record_lab = int(time_inc / record_step) + 1
     if output_files == 1:
