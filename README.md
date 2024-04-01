@@ -1,3 +1,6 @@
+<p align="middle">
+  <img src="docs/materials/GO_MELT_LOGO.png" width="600" />
+</p>
 A GPU-accelerated framework for multiscale problems using [JAX](https://github.com/google/jax). 
 
 # GO-MELT
