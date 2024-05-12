@@ -24,6 +24,7 @@ If you found this library useful in academic or industry work, we appreciate you
 1) Starring the project on Github
 2) Citing the relevant paper(s):
 
+[GO-MELT: GPU-optimized multilevel execution of LPBF thermal simulations](https://doi.org/10.1016/j.cma.2024.116977).
 ```bibtex
 @article{leonor2024,
   title = {GO-MELT: GPU-optimized multilevel execution of LPBF thermal simulations},
