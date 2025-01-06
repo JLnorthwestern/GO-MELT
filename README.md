@@ -4,6 +4,8 @@
 
 A GPU-accelerated framework for multiscale problems using [JAX](https://github.com/google/jax). 
 
+New updates (and reworks) will be introduced in 2025 with the publication of two separate papers. New features will include phase-dependent/temperature-dependent material properties, experimental validation, and gcode reader.
+
 # GO-MELT
 GO-MELT, short for GPU-Optimized Multilevel Execution of LPBF Thermal simulations, is a finite element solver used to calculate multiscale problems.
 
