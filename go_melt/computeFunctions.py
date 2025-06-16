@@ -1335,11 +1335,14 @@ def move_fine_mesh(node_coords, element_size, v):
 
 
 @jax.jit
-def update_overlap_nodes_coords(Level, vcon, element_size):
+def update_overlap_nodes_coords(Level, vcon, element_size, ele_ratio):
     Level["overlapNodes"] = [
-        Level["orig_overlap_nodes"][0] + (vcon[0] / element_size[0] + 1e-2).astype(int),
-        Level["orig_overlap_nodes"][1] + (vcon[1] / element_size[1] + 1e-2).astype(int),
-        Level["orig_overlap_nodes"][2] + (vcon[2] / element_size[2] + 1e-2).astype(int),
+        Level["orig_overlap_nodes"][0]
+        + ele_ratio[0] * (vcon[0] / element_size[0] + 1e-2).astype(int),
+        Level["orig_overlap_nodes"][1]
+        + ele_ratio[1] * (vcon[1] / element_size[1] + 1e-2).astype(int),
+        Level["orig_overlap_nodes"][2]
+        + ele_ratio[2] * (vcon[2] / element_size[2] + 1e-2).astype(int),
     ]
     Level["overlapCoords"] = [
         Level["orig_overlap_coors"][0]
@@ -1691,7 +1694,10 @@ def moveEverything(v, vstart, Levels, move_v, LInterp, L1L2Eratio, L2L3Eratio, h
         Levels[3]["init_node_coors"], Levels[2]["h"], _L3v_tot_con
     )
 
-    Levels[3] = update_overlap_nodes_coords(Levels[3], _L3v_tot_con, Levels[2]["h"])
+    # Element ratios are [1,1,1] since they are updated later
+    Levels[3] = update_overlap_nodes_coords(
+        Levels[3], _L3v_tot_con, Levels[2]["h"], [1, 1, 1]
+    )
 
     Levels[3]["T0"] = interpolatePoints(Levels[1], Levels[1]["T0"], Levels3newcoords)
     _3T0 = interpolatePoints(Levels[2], Levels[2]["Tprime0"], Levels3newcoords)
@@ -1737,7 +1743,9 @@ def moveEverything(v, vstart, Levels, move_v, LInterp, L1L2Eratio, L2L3Eratio, h
     ]
     ###### updateL3AfterMove #####
     # Update Level 0
-    Levels[0] = update_overlap_nodes_coords(Levels[0], _L3v_tot_con, Levels[3]["h"])
+    Levels[0] = update_overlap_nodes_coords(
+        Levels[0], _L3v_tot_con, Levels[2]["h"], L2L3Eratio
+    )
     Levels[0] = update_overlap_nodes_coords_L2(
         Levels[0],
         _v_tot_con,
