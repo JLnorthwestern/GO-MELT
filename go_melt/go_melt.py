@@ -12,62 +12,22 @@ from createPath import parsingGcode, count_lines
 import gc
 import json
 
-jax.config.update("jax_enable_x64", True)
-
 
 def go_melt(solver_input: dict):
     # Start timestamp for total time elapsed for simulation
     tstart = time.time()
 
     # Name of levels (L1: Level 1, L2: Level 2, L3: Level 3)
-    level_names = ["L1", "L2", "L3", "L4"]
+    level_names = ["L1", "L2", "L3"]
 
     # Set up dictionaries for properties, multilevel information, and nonmesh info
     Properties = SetupProperties(solver_input.get("properties", {}))
     Levels = SetupLevels(solver_input, Properties)
     Nonmesh = SetupNonmesh(solver_input.get("nonmesh", {}))
 
-    print(Properties)
-    print(Levels)
-    print(Nonmesh)
-    Test2pos = jnp.zeros(7)
-
     # Get total number of elements, nodes, and subcycles for static variable execution
     ne_nn = getStaticNodesAndElements(Levels)
     subcycle = getStaticSubcycle(Nonmesh)
-
-    Levels[3]["CenterIdx"] = jnp.arange(Levels[3]["ne"])[
-        calculateSubsectionElements(
-            Levels, ne_nn, Properties["laser_center"], Properties
-        )
-        > 0
-    ]
-    Levels[3]["SurroSubIdx"] = copy.deepcopy(Levels[3]["CenterIdx"])
-
-    _xc = jnp.stack(
-        [
-            jnp.where(
-                Levels[3]["node_coords"][_] >= Properties["laser_center"][_], size=1
-            )[0][0]
-            for _ in range(2)
-        ]
-    )
-    Levels[3]["CenterIdx"] = Levels[3]["CenterIdx"] - (
-        (_xc[0])
-        + (_xc[1]) * Levels[3]["elements"][0]
-        + (Levels[3]["elements"][2] - 1)
-        * Levels[3]["elements"][0]
-        * Levels[3]["elements"][1]
-    )
-
-    # Open files for recording time results and temperature data at probe location
-    if Nonmesh["savetime"]:
-        timing_file = open(Nonmesh["save_path"] + "timing.csv", "w")
-    if Nonmesh["savevalid"]:
-        valid_file = open(Nonmesh["save_path"] + "valid.csv", "w")
-    energyfile = open(Nonmesh["save_path"] + "energyfile.csv", "w")
-    finalenergyfile = open(Nonmesh["save_path"] + "finalenergyfile.csv", "w")
-    finalenergyfile.write("Energy\n")
 
     # Determine ratio between Levels 1 and 2 for mesh movement calculations
     L1L2Eratio = [
@@ -333,7 +293,6 @@ def go_melt(solver_input: dict):
                     )
                     # If indicated, calculate new substrate nodes for Levels 1, 2, and 3
                     if move_vert:
-                        Test2pos = Test2pos.at[:].set(laser_all[0, :])
                         move_vert = False
                         substrate = getSubstrateNodes(Levels)
                         print("Start of new layer")
@@ -478,9 +437,6 @@ def go_melt(solver_input: dict):
             record_inc += t_add
 
         t_output += laser_all[:, 5].sum()
-        # If indicated, record temperature probe data for later analysis
-        if Nonmesh["savevalid"] and laser_pos[2] == Nonmesh["valpt"][2]:
-            saveValidData(Levels, Nonmesh["valpt"], t_output, valid_file)
 
         # If not in dwell time, record the temperature field for all three levels
         if record_inc >= Nonmesh["record_step"]:
@@ -495,10 +451,6 @@ def go_melt(solver_input: dict):
         # Record time needed to complete loop of GO-MELT
         tend = time.time()
 
-        # If indicated, record time elapsed for loop
-        if Nonmesh["savetime"]:
-            timing_file.write("%.9f\n" % (tend - tstart))
-
         # Calculate timing outputs used for monitoring progress
         t_duration = tend - tstart
         t_now = 1000 * (tend - t_loop)
@@ -510,13 +462,8 @@ def go_melt(solver_input: dict):
             % (time_inc, total_t_inc, t_output, t_duration, t_now, t_avg)
         )
 
-    # Close files
-    if Nonmesh["savetime"]:
-        timing_file.close()
-    if Nonmesh["savevalid"]:
-        valid_file.close()
+    # Close file
     tool_path_file.close()
-    energyfile.close()
 
     # Save final Level 0
     saveState(Levels[0], "Level0_", Nonmesh["layer_num"], Nonmesh["save_path"], 0)
@@ -550,43 +497,41 @@ def go_melt(solver_input: dict):
 
 
 if __name__ == "__main__":
+    os.system("clear")
+
     # Check the number of arguments
     # Usage: python3 run_go_melt.py DEVICE_ID input_file
-
     # Check DEVICE_ID argument
-    if len(sys.argv) > 1:
-        if sys.argv[1].isdigit():
-            DEVICE_ID = int(sys.argv[1])
-        else:
-            print("Invalid DEVICE_ID. Setting DEVICE_ID to 0.")
-            DEVICE_ID = 0
+    if len(sys.argv) > 1 and sys.argv[1].isdigit():
+        DEVICE_ID = int(sys.argv[1])
     else:
-        print("DEVICE_ID not provided. Setting DEVICE_ID to 0.")
+        print("GPU ID not provided. Setting GPU to 0.")
         DEVICE_ID = 0
 
     # Check input_file argument
     if len(sys.argv) > 2:
         input_file = sys.argv[2]
     else:
-        print("input_file not provided. Setting input_file to 'examples/example.json'.")
+        print("Input file not provided. Setting input file to 'examples/example.json'.")
         input_file = "examples/example.json"
 
-    print(f"DEVICE_ID: {DEVICE_ID}, input_file: {input_file}")
-
+    # Initializing GPU
     os.environ["CUDA_DEVICE_ORDER"] = "PCI_BUS_ID"
     os.environ["XLA_PYTHON_CLIENT_PREALLOCATE"] = "false"
     try:
-        # Run on single GPU
+        # Always try to run on single GPU
         os.environ["CUDA_VISIBLE_DEVICES"] = str(DEVICE_ID)
     except:
         # Run on CPU
         import jax
 
         jax.config.update("jax_platform_name", "cpu")
-        print("No GPU found.")
+        print("No GPU found. Running on CPU.")
 
     with open(input_file, "r") as read_file:
         solver_input = json.load(read_file)
 
     # Run GO-MELT
+    print("Running GO-MELT")
+    print(f"GPU: {DEVICE_ID}, Input File: {input_file}")
     go_melt(solver_input)

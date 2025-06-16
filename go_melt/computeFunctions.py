@@ -11,20 +11,14 @@ from jax.experimental import sparse
 from jax.numpy import multiply
 from jax.numpy import newaxis as newax
 from pyevtk.hl import gridToVTK
-from jax import random
 import sys
 import math
 
-# TFPD: Temporary fix for phase-dependence (need to set minimum temp to ambient)
-# This issue is likely due to using explicit material properties with distinct changes
+# TFSP: Temporary fix for single precision
 
 
-def calcNumNodes(x):
-    """calcNumNodes finds the number of nodes from number of elements.
-    :param x: list of elements (3D)
-    :return x: list of nodes (3D)
-    """
-    return [x[0] + 1, x[1] + 1, x[2] + 1]
+def calcNumNodes(elements):
+    return [elements[0] + 1, elements[1] + 1, elements[2] + 1]
 
 
 def createMesh3D(x, y, z):
@@ -352,11 +346,9 @@ def SetupNonmesh(nonmesh_input):
     Nonmesh.record_step = nonmesh_input.get(
         "record_step", Nonmesh.subcycle_num_L2 * Nonmesh.subcycle_num_L3
     )
-    Nonmesh.valpt = nonmesh_input.get("valid_interpolation_point", [7.28, 3.68, 0.18])
     Nonmesh.gcode = nonmesh_input.get(
         "gcode", "./examples/gcodefiles/defaultName.gcode"
     )
-    Nonmesh.training = nonmesh_input.get("training", 0)
     Nonmesh.dwell_time_multiplier = nonmesh_input.get("dwell_time_multiplier", 1)
     Nonmesh.use_txt = nonmesh_input.get("use_txt", 0)
     # How long to wait after each track finishes before moving on
@@ -1657,9 +1649,9 @@ def stepGOMELT(
     L1T, L2T, L3T = computeSolutions(
         Levels, ne_nn, tmp_ne_nn, F, Vcu, LInterp, Lk, Lrhocp, Vmu, dt, properties
     )
-    L1T = jnp.maximum(properties["T_amb"], L1T)  # TFPD
-    L2T = jnp.maximum(properties["T_amb"], L2T)  # TFPD
-    L3T = jnp.maximum(properties["T_amb"], L3T)  # TFPD
+    L1T = jnp.maximum(properties["T_amb"], L1T)  # TFSP
+    L2T = jnp.maximum(properties["T_amb"], L2T)  # TFSP
+    L3T = jnp.maximum(properties["T_amb"], L3T)  # TFSP
     L3Tp, L2Tp, L2T, L1T = getBothNewTprimes(
         Levels, L3T, L2T, LInterp[1], L1T, LInterp[0]
     )
@@ -1669,15 +1661,15 @@ def stepGOMELT(
     L1T, L2T, Levels[3]["T0"] = computeSolutions(
         Levels, ne_nn, tmp_ne_nn, F, Vcu, LInterp, Lk, Lrhocp, Vmu, dt, properties
     )
-    L1T = jnp.maximum(properties["T_amb"], L1T)  # TFPD
-    L2T = jnp.maximum(properties["T_amb"], L2T)  # TFPD
-    Levels[3]["T0"] = jnp.maximum(properties["T_amb"], Levels[3]["T0"])  # TFPD
+    L1T = jnp.maximum(properties["T_amb"], L1T)  # TFSP
+    L2T = jnp.maximum(properties["T_amb"], L2T)  # TFSP
+    Levels[3]["T0"] = jnp.maximum(properties["T_amb"], Levels[3]["T0"])  # TFSP
     Levels[3]["Tprime0"], Levels[2]["Tprime0"], Levels[2]["T0"], Levels[1]["T0"] = (
         getBothNewTprimes(Levels, Levels[3]["T0"], L2T, LInterp[1], L1T, LInterp[0])
     )
 
     Levels[0]["S1"] = Levels[0]["S1"].at[Levels[0]["idx"]].set(Levels[3]["S1"])
-    Levels[0]["S2"] = Levels[0]["S2"].at[:].set(0)
+    Levels[0]["S2"] = Levels[0]["S2"].at[:].set(False)
     Levels[0]["S2"] = Levels[0]["S2"].at[Levels[0]["idx"]].set(Levels[3]["S2"])
     _resetmask = ((1 - 2 * preS2) * Levels[3]["S2"]) == 1
     return Levels, _resetmask
@@ -2310,7 +2302,7 @@ def subcycleGOMELT(
         laser_position[:, 5].sum(),
         properties,
     )
-    L1T = jnp.maximum(properties["T_amb"], L1T)  # TFPD
+    L1T = jnp.maximum(properties["T_amb"], L1T)  # TFSP
 
     ## Subcycle Level 2 ##
     def subcycleL2_Part1(_L2carry, _L2sub):
@@ -2352,7 +2344,7 @@ def subcycleGOMELT(
             L2rhocp,
             laser_position[Lidx, 5].sum(),
         )
-        L2T = jnp.maximum(properties["T_amb"], L2T)  # TFPD
+        L2T = jnp.maximum(properties["T_amb"], L2T)  # TFSP
 
         ### Subcycle Level 3 ###
         def subcycleL3_Part1(_L3carry, _L3sub):
@@ -2383,7 +2375,7 @@ def subcycleGOMELT(
                 L3rhocp,
                 laser_position[LLidx, 5],
             )
-            L3T = jnp.maximum(properties["T_amb"], L3T)  # TFPD
+            L3T = jnp.maximum(properties["T_amb"], L3T)  # TFSP
             ### End Subcycle Level 3 ###
             return ([L3T, L3S1], [L3T, L3S1])
 
@@ -2442,7 +2434,7 @@ def subcycleGOMELT(
         laser_position[:, 5].sum(),
         properties,
     )
-    L1T = jnp.maximum(properties["T_amb"], L1T)  # TFPD
+    L1T = jnp.maximum(properties["T_amb"], L1T)  # TFSP
 
     ## Subcycle Level 2 ##
     def subcycleL2_Part2(_L2carry, _L2sub):
@@ -2495,7 +2487,7 @@ def subcycleGOMELT(
             L2rhocp,
             laser_position[Lidx, 5].sum(),
         )
-        L2T = jnp.maximum(properties["T_amb"], L2T)  # TFPD
+        L2T = jnp.maximum(properties["T_amb"], L2T)  # TFSP
 
         ### Subcycle Level 3 ###
         def subcycleL3_Part2(_L3carry, _L3sub):
@@ -2526,17 +2518,13 @@ def subcycleGOMELT(
                 L3rhocp,
                 laser_position[LLidx, 5],
             )
-            L3T = jnp.maximum(properties["T_amb"], L3T)  # TFPD
+            L3T = jnp.maximum(properties["T_amb"], L3T)  # TFSP
             # If changed from solid back to liquid, clear
             _resetmask = ((1 - 2 * _L3carry[2]) * L3S2) == 1
             _resetaccumtime = _L3carry[4] * _resetmask
             _max_check = jnp.maximum(_resetaccumtime, _L3carry[3])
             max_accum_L3 = _max_check
             accum_L3 = _L3carry[4] + laser_position[LLidx, 5] * L3S2 - _resetaccumtime
-            # Since could happen within loop, reset in loop
-            # _L3accum = _L3carry[2] - _resetmask * _L3carry[2]
-            # L3accum = _L3accum + laser_position[LLidx, 5] * L3S2
-            # all_reset = _L3carry[4] + _resetmask
             ### End Subcycle Level 3 ###
             return (
                 [L3T, L3S1, L3S2, max_accum_L3, accum_L3],
@@ -2587,7 +2575,7 @@ def subcycleGOMELT(
     )
 
     Levels[0]["S1"] = Levels[0]["S1"].at[Levels[0]["idx"]].set(Levels[3]["S1"])
-    Levels[0]["S2"] = Levels[0]["S2"].at[:].set(0)
+    Levels[0]["S2"] = Levels[0]["S2"].at[:].set(False)
     Levels[0]["S2"] = Levels[0]["S2"].at[Levels[0]["idx"]].set(Levels[3]["S2"])
     return Levels, L2all, L3all, L3pall, max_accum_L3, accum_L3
 
@@ -2615,16 +2603,6 @@ def printLevelMaxMin(Ls, Lnames):
         # print(Ls)
         sys.exit(1)
     print("")
-
-
-def saveValidData(Levels, _valpt, t_output, valid_file):
-    _valptlist = [jnp.array([_valpt[ii]]) for ii in range(3)]
-    valid_data = interpolatePoints(Levels[1], Levels[1]["T0"], _valptlist)
-    for i in range(2, len(Levels)):
-        valid_data += interpolatePoints(Levels[i], Levels[i]["Tprime0"], _valptlist)
-
-    # if savevalid:
-    valid_file.write("%.9f,%.9f\n" % (t_output, valid_data))
 
 
 def saveResults(Levels, Nonmesh, savenum):
@@ -2657,41 +2635,3 @@ def melting_temp(temps, delt_T, T_melt, accum_time, idx):
     T_above_threshold = np.array(temps > T_melt)
     accum_time = accum_time.at[idx].add(T_above_threshold * delt_T)
     return accum_time
-
-
-@partial(jax.jit, static_argnames=["ne_nn"])
-def calculateSubsectionElements(Levels, ne_nn, laser_position, Properties):
-    # Get shape functions and weights
-    coords = getSampleCoords(Levels[3])
-    Nf, _, wqf = computeQuad3dFemShapeFunctions_jax(coords)
-
-    def stepcomputeCoarseSource(ieltf):
-        # Get the nodal indices for that element
-        ix, iy, iz, idx = convert2XYZ(
-            ieltf,
-            Levels[3]["elements"][0],
-            Levels[3]["elements"][1],
-            Levels[3]["nodes"][0],
-            Levels[3]["nodes"][1],
-        )
-        # Get nodal coordinates for the fine element
-        x, y, z = getQuadratureCoords(Levels[3], ix, iy, iz, Nf)
-
-        x_bool = (
-            1.0
-            * (x.min() > (laser_position[0] - 2 * Properties["laser_radius"]))
-            * (x.max() < (laser_position[0] + 2 * Properties["laser_radius"]))
-        )
-        y_bool = (
-            1.0
-            * (y.min() > laser_position[1] - 2 * Properties["laser_radius"])
-            * (y.max() < laser_position[1] + 2 * Properties["laser_radius"])
-        )
-        z_bool = 1.0 * (z.min() > laser_position[2] - 2 * Properties["laser_depth"])
-        # Compute the source at the quadrature point location
-        return (x_bool * y_bool) * z_bool
-
-    vstepcomputeCoarseSource = jax.vmap(stepcomputeCoarseSource)
-    _data = vstepcomputeCoarseSource(jnp.arange(ne_nn[1]))
-
-    return _data
