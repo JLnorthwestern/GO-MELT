@@ -101,7 +101,7 @@ def SetupLevels(solver_input, properties):
         level.S2 = jnp.zeros(level.nn, dtype=bool)
         level.k = properties["k_powder"] * jnp.ones(level.nn)
         level.rhocp = (
-            properties["cp_solid"] * properties["rho_powder"] * jnp.ones(level.nn)
+            properties["cp_solid_coeff_a0"] * properties["rho"] * jnp.ones(level.nn)
         )
 
     Level1.S1_storage = jnp.zeros(
@@ -254,19 +254,18 @@ def SetupLevels(solver_input, properties):
 def SetupProperties(prop_obj):
     properties = dict2obj(prop_obj)
     # Define the material properties
-    # Conductivity (W/mK)
-    properties.k = prop_obj.get("thermal_conductivity", 22.0)
-    properties.k_bulk = prop_obj.get("thermal_conductivity_bulk", 22.0)
-    properties.k_powder = prop_obj.get("thermal_conductivity_powder", 0.2)
-    # Heat capacity (J/kgK)
-    properties.cp = prop_obj.get("heat_capacity", 750.0)
-    properties.cp_solid = prop_obj.get("heat_capacity_solid", 750.0)
+    # Conductivity (W/mK), (Temperature-dependence a1 * T + a0)
+    properties.k_powder = prop_obj.get("thermal_conductivity_powder", 0.4)
+    properties.k_bulk_coeff_a0 = prop_obj.get("thermal_conductivity_bulk_a0", 4.23)
+    properties.k_bulk_coeff_a1 = prop_obj.get("thermal_conductivity_bulk_a1", 0.016)
+    properties.k_fluid_coeff_a0 = prop_obj.get("thermal_conductivity_fluid_a0", 29.0)
+    # Heat capacity (J/kgK), (Temperature-dependence a1 * T + a0)
+    properties.cp_solid_coeff_a0 = prop_obj.get("heat_capacity_solid_a0", 383.1)
+    properties.cp_solid_coeff_a1 = prop_obj.get("heat_capacity_solid_a1", 0.174)
     properties.cp_mushy = prop_obj.get("heat_capacity_mushy", 3235.0)
     properties.cp_fluid = prop_obj.get("heat_capacity_fluid", 769.0)
     # Density (kg/mm^3)
     properties.rho = prop_obj.get("density", 8.0e-6)
-    properties.rho_bulk = prop_obj.get("density_bulk", 8.0e-6)
-    properties.rho_powder = prop_obj.get("density_powder", 5.6e-6)
     # Laser radius (sigma, mm)
     properties.laser_r = prop_obj.get("laser_radius", 0.110)
     # Laser radius (sigma, mm)
@@ -1798,25 +1797,6 @@ def updateStateProperties(Levels, properties, substrate):
 
 
 def computeStateProperties(T, S1, properties, Level_nodes_substrate):
-    # # S1 = 0 -> powder, S1 = 1 -> bulk
-    # # S2 = 0 -> not fluid, S2 = 1 -> fluid
-    # S2 = T > properties["T_liquidus"]
-    # S1 = 1.0 * ((S1 > 0.499) | S2)
-    # S1 = S1.at[:Level_nodes_substrate].set(1)
-    # Need to convert to W/mmK for k (check units), if > 1, likely W/mK
-    # k = properties["k_powder"] + S1 * (properties["k_bulk"] - properties["k_powder"])
-    # rho_bulk = properties["rho_bulk"]
-    # rhocp = properties["rho_powder"] + S1 * (rho_bulk - properties["rho_powder"])
-    # rhocp *= (
-    #     properties["cp_solid"]
-    #     + ((properties["cp_fluid"] - properties["cp_solid"]) * S2)
-    #     + (
-    #         (properties["cp_mushy"] - properties["cp_solid"])
-    #         * ((T > properties["T_solidus"]) != S2)
-    #     )
-    # )
-    # return S1, S2, k, rhocp
-
     # This is using temperature and phase dependent material properties
     S2 = T >= properties["T_liquidus"]
     S3 = (T > properties["T_solidus"]) & (T < properties["T_liquidus"])
@@ -1824,37 +1804,25 @@ def computeStateProperties(T, S1, properties, Level_nodes_substrate):
     S1 = S1.at[:Level_nodes_substrate].set(1)
     k = (
         (1 - S1) * (1 - S2) * properties["k_powder"]
-        + S1 * (1 - S2) * (0.016 * T + 4.23)
-        + S2 * 29
+        + S1
+        * (1 - S2)
+        * (properties["k_bulk_coeff_a1"] * T + properties["k_bulk_coeff_a0"])
+        + S2 * properties["k_fluid_coeff_a0"]
     ) / 1000
     rhocp = properties["rho"] * (
-        (1 - S2) * (1 - S3) * (0.174 * T + 383.1)
+        (1 - S2)
+        * (1 - S3)
+        * (properties["cp_solid_coeff_a1"] * T + properties["cp_solid_coeff_a0"])
         + S3 * properties["cp_mushy"]
         + S2 * properties["cp_fluid"]
     )
+
     return S1, S2, k, rhocp
 
 
 # S1 = 0 -> powder, S1 = 1 -> bulk
 # S2 = 0 -> not fluid, S2 = 1 -> fluid
 def computeStatePropertiesL1(T, S1, properties, substrate):
-    # L1idx = substrate[1]
-    # S1 = S1.at[:L1idx].set(1)
-    # S2 = T > properties["T_liquidus"]
-    # Need to convert to W/mmK for k (check units), if > 1, likely W/mK
-    # k = properties["k_powder"] + S1 * (properties["k_bulk"] - properties["k_powder"])
-    # rho_bulk = properties["rho_bulk"]
-    # rhocp = properties["rho_powder"] + S1 * (rho_bulk - properties["rho_powder"])
-    # rhocp *= (
-    #     properties["cp_solid"]
-    #     + ((properties["cp_fluid"] - properties["cp_solid"]) * S2)
-    #     + (
-    #         (properties["cp_mushy"] - properties["cp_solid"])
-    #         * ((T > properties["T_solidus"]) != S2)
-    #     )
-    # )
-    # return k, rhocp
-
     L1idx = substrate[1]
     S2 = T >= properties["T_liquidus"]
     S3 = (T > properties["T_solidus"]) & (T < properties["T_liquidus"])
@@ -1871,25 +1839,6 @@ def computeStatePropertiesL1(T, S1, properties, substrate):
         + S2 * properties["cp_fluid"]
     )
     return k, rhocp
-
-
-def computeTemperatureDependence(T):
-    k_bulk = (0.015 * T + 5.53) / 1000
-    rho_solid = -0.337 * T + 8340.426
-    rho_fluid = -1.172 * T + 9328
-    cp_solid = 0.154 * T + 384.108
-    return k_bulk, rho_solid, rho_fluid, cp_solid
-
-
-# # For bridge
-# def computeTemperatureDependence(T):
-#     k_bulk = (0.016 * T + 4.23) / 1000
-#     k_bulk = jnp.minimum(k_bulk, 0.029)
-#     rho_solid = -0.392 * T + 8306.875
-#     rho_fluid = -0.88 * T + 8816.052
-#     rho_fluid = jnp.maximum(rho_fluid, -0.88 * 3038 + 8816.052)
-#     cp_solid = 0.174 * T + 383.122
-#     return k_bulk, rho_solid, rho_fluid, cp_solid
 
 
 @partial(jax.jit, static_argnames=["ne_nn", "tmp_ne_nn", "substrate"])
@@ -2269,10 +2218,6 @@ def subcycleGOMELT(
     L1k, L1rhocp = computeStatePropertiesL1(
         Levels[1]["T0"], Levels[1]["S1"], properties, substrate
     )
-
-    # L1F_all, L2F_all, L3F_all = computeAllSources(
-    #     Levels, ne_nn, laser_position, Shapes, properties, laserP
-    # )
 
     # Compute Level 1 Source #
     L1F = computeLevelSource(
