@@ -72,7 +72,7 @@ def go_melt(solver_input: dict):
     saveResults(Levels, Nonmesh, savenum)
 
     # Initialize z coordinate for laser position comparison to identify layer change
-    laser_prev_z = 1e6
+    laser_prev_z = float("inf")
     troubleshoot = 0
     _dwell_time_count = 0
     record_accum = True
@@ -198,7 +198,6 @@ def go_melt(solver_input: dict):
                         else:
                             tmp_coords[2] = tmp_coords[2] + Properties["layer_height"]
                             _L1T_state_idx += 1
-                    ### POSSIBLE PROBLEM WHEN LOADING
                     if not load_chkpt:
                         Levels[1]["T0"] = jnp.maximum(
                             interpolatePoints(Levels[1], Levels[1]["T0"], tmp_coords),
@@ -211,7 +210,6 @@ def go_melt(solver_input: dict):
                         )
                         Levels[1]["S1"] = Levels[1]["S1_storage"][_L1T_state_idx, :]
                         Levels[1]["node_coords"] = copy.deepcopy(tmp_coords)
-                    ### POSSIBLE PROBLEM WHEN LOADING
                     L1L2Interp = interpolatePointsMatrix(
                         Levels[1], Levels[2]["node_coords"]
                     )

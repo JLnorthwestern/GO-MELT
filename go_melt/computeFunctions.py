@@ -725,26 +725,6 @@ def computeSourceFunction_jax(x, y, z, v, properties, P):
 
     return _pcoeff * Qx * Qy * Qz
 
-    # """CONE"""
-    # # Laser absorptivity
-    # eta = properties["laser_eta"]
-    # # Radius top
-    # r_top = properties["laser_r"]
-    # # Radius bottom
-    # r_bot = properties["laser_r_bot"]
-    # # Depth of cone
-    # d = properties["laser_d"]
-
-    # # Precompute some constants
-    # _r_top_sq = r_top**2
-    # _r_bot_sq = r_bot**2
-    # r_0 = r_top + ((z - v[2]) / d) * (r_top - r_bot)
-    # _r_0_sq = r_0**2
-    # _pcoeff = 6 * P * eta / (jnp.pi * d * (_r_top_sq + r_top * r_bot + _r_bot_sq))
-    # _exponent = jnp.exp(-2 * ((x - v[0]) ** 2 + (y - v[1]) ** 2) / _r_0_sq)
-
-    # return _pcoeff * _exponent * ((z - v[2]) / d >= -1)
-
 
 @jax.jit
 def interpolatePointsMatrix(Level, node_coords_new):
@@ -832,11 +812,6 @@ def interpolatePointsMatrix(Level, node_coords_new):
         # The where makes it zero outside the interpolation range
         Nc = ((Nc >= -1e-2).all() & (Nc <= 1 + 1e-2).all()) * Nc
         Nc = jnp.clip(Nc, 0.0, 1.0)
-        # Nc = (
-        #     Nc
-        #     * (Nc >= -1e-2).all().astype(float)
-        #     * (Nc <= 1 + 1e-2).all().astype(float)
-        # )
         return Nc, node
 
     vstepInterpolatePoints = jax.vmap(stepInterpolatePoints)
@@ -939,11 +914,6 @@ def interpolatePoints(Level, u, node_coords_new):
         # The where makes it zero outside the interpolation range
         Nc = ((Nc >= -1e-2).all() & (Nc <= 1 + 1e-2).all()) * Nc
         Nc = jnp.clip(Nc, 0.0, 1.0)
-        # Nc = (
-        #     Nc
-        #     * (Nc >= -1e-2).all().astype(float)
-        #     * (Nc <= 1 + 1e-2).all().astype(float)
-        # )
         return Nc @ u[node]
 
     vstepInterpolatePoints = jax.vmap(stepInterpolatePoints)
@@ -1520,17 +1490,7 @@ def getBothNewTprimes(Levels, FineT, MesoT, M2F, CoarseT, C2M):
 
 @partial(jax.jit, static_argnames=["ne_nn", "tmp_ne_nn"])
 def computeSolutions(
-    Levels,
-    ne_nn,
-    tmp_ne_nn,
-    LF,
-    L1V,
-    LInterp,
-    Lk,
-    Lrhocp,
-    L2V,
-    dt,
-    properties,
+    Levels, ne_nn, tmp_ne_nn, LF, L1V, LInterp, Lk, Lrhocp, L2V, dt, properties
 ):
     L1T = solveMatrixFreeFE(
         Levels[1],
@@ -1788,14 +1748,16 @@ def updateStateProperties(Levels, properties, substrate):
     # Directly substitute into T0 to save deepcopy
     Levels[1]["S1"] = Levels[1]["S1"].at[_idx].set(_val)
     Levels[1]["S1"] = Levels[1]["S1"].at[: substrate[1]].set(1)
-    L1k, L1rhocp = computeStatePropertiesL1(
-        Levels[1]["T0"], Levels[1]["S1"], properties, substrate
+    _, _, L1k, L1rhocp = computeStateProperties(
+        Levels[1]["T0"], Levels[1]["S1"], properties, substrate[1]
     )
 
     # 0 added to beginning of list so index matches levels
     return (Levels, [0, L1k, L2k, L3k], [0, L1rhocp, L2rhocp, L3rhocp])
 
 
+# S1 = 0 -> powder, S1 = 1 -> bulk
+# S2 = 0 -> not fluid, S2 = 1 -> fluid
 def computeStateProperties(T, S1, properties, Level_nodes_substrate):
     # This is using temperature and phase dependent material properties
     S2 = T >= properties["T_liquidus"]
@@ -1820,32 +1782,13 @@ def computeStateProperties(T, S1, properties, Level_nodes_substrate):
     return S1, S2, k, rhocp
 
 
-# S1 = 0 -> powder, S1 = 1 -> bulk
-# S2 = 0 -> not fluid, S2 = 1 -> fluid
-def computeStatePropertiesL1(T, S1, properties, substrate):
-    L1idx = substrate[1]
-    S2 = T >= properties["T_liquidus"]
-    S3 = (T > properties["T_solidus"]) & (T < properties["T_liquidus"])
-    S1 = 1.0 * ((S1 > 0.499) | S2)
-    S1 = S1.at[:L1idx].set(1)
-    k = (
-        (1 - S1) * (1 - S2) * properties["k_powder"]
-        + S1 * (1 - S2) * (0.016 * T + 4.23)
-        + S2 * 29
-    ) / 1000
-    rhocp = properties["rho"] * (
-        (1 - S2) * (1 - S3) * (0.174 * T + 383.1)
-        + S3 * properties["cp_mushy"]
-        + S2 * properties["cp_fluid"]
-    )
-    return k, rhocp
-
-
 @partial(jax.jit, static_argnames=["ne_nn", "tmp_ne_nn", "substrate"])
 def stepGOMELTDwellTime(Levels, tmp_ne_nn, ne_nn, properties, dt, substrate):
     L1, L1ne = Levels[1], tmp_ne_nn[0]
     Fc = computeConvRadBC(L1, L1["T0"], L1ne, ne_nn[2], properties, F=0)
-    L1k, L1rhocp = computeStatePropertiesL1(L1["T0"], L1["S1"], properties, substrate)
+    _, _, L1k, L1rhocp = computeStateProperties(
+        L1["T0"], L1["S1"], properties, substrate[1]
+    )
 
     L1T = solveMatrixFreeFE(L1, ne_nn[2], L1ne, L1k, L1rhocp, dt, L1["T0"], Fc, 0)
     L1T = substitute_Tbar(L1T, tmp_ne_nn[1], properties["T_amb"])
@@ -2215,8 +2158,8 @@ def subcycleGOMELT(
     )
     Levels[1]["S1"] = Levels[1]["S1"].at[_idx].set(_val)
     Levels[1]["S1"] = Levels[1]["S1"].at[: substrate[1]].set(1)
-    L1k, L1rhocp = computeStatePropertiesL1(
-        Levels[1]["T0"], Levels[1]["S1"], properties, substrate
+    _, _, L1k, L1rhocp = computeStateProperties(
+        Levels[1]["T0"], Levels[1]["S1"], properties, substrate[1]
     )
 
     # Compute Level 1 Source #
