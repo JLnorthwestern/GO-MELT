@@ -9,7 +9,6 @@ import jax.numpy as jnp
 import numpy as np
 from jax.experimental import sparse
 from jax.numpy import multiply
-from jax.numpy import newaxis as newax
 from pyevtk.hl import gridToVTK
 import sys
 import math
@@ -531,13 +530,13 @@ def getBCindices(x):
     eidx = jnp.arange(nx - 1, nn, nx)
 
     # South face (y = 0)
-    sidx = jnp.arange(0, nx)[:, newax] + (nx * ny * jnp.arange(0, nz))[newax, :]
+    sidx = jnp.arange(0, nx)[:, None] + (nx * ny * jnp.arange(0, nz))[None, :]
     sidx = sidx.reshape(-1)
 
     # North face (y = ny - 1)
     nidx = (
-        jnp.arange(nx * (ny - 1), nx * ny)[:, newax]
-        + (nx * ny * jnp.arange(0, nz))[newax, :]
+        jnp.arange(nx * (ny - 1), nx * ny)[:, None]
+        + (nx * ny * jnp.arange(0, nz))[None, :]
     )
     nidx = nidx.reshape(-1)
 
@@ -1094,25 +1093,43 @@ def interpolatePointsMatrix(Level, node_coords_new):
 
 @jax.jit
 def interpolate_w_matrix(C2F, T):
-    """interpolate_w_matrix uses shape functions from interpolatePointsMatrix
-    to interpolate the solution to the new nodal coordinates
-    :param C2F[0]: shape functions for interpolation
-    :param C2F[1]: nodal indices of source solution
-    :param T: source solution
-    :return T_new: interpolated solution at new nodal coordinates
+    """
+    Interpolate a solution field to new nodal coordinates using shape functions.
+
+    This function applies precomputed shape functions and node indices
+    (from `interpolatePointsMatrix`) to interpolate the solution `T`
+    from a source mesh to a new set of points.
+
+    Parameters:
+    C2F (tuple): Interpolation data.
+                 - C2F[0]: Shape function weights (array of shape [n_new, n_basis]).
+                 - C2F[1]: Indices of source nodes (array of shape [n_new, n_basis]).
+    T (array): Source solution values at coarse nodes.
+
+    Returns:
+    array: Interpolated solution at new nodal coordinates.
     """
     return multiply(C2F[0], T[C2F[1]]).sum(axis=1)
 
 
 @jax.jit
 def interpolatePoints(Level, u, node_coords_new):
-    """interpolatePoints interpolate solutions located on Level["node_coords"]
-    and connected with Level["connect"] to new coordinates node_coords_new. Values
-    that are later bin counted are the output
-    :param Level["node_coords"]: source nodal coordinates
-    :param Level["connect"]: connectivity matrix
-    :param node_coords_new: output nodal coordinates
-    :return _val: nodal values that need to be bincounted
+    """
+    Interpolate a scalar field from a structured mesh to new coordinates.
+
+    This function evaluates shape functions at new nodal coordinates and
+    uses them to interpolate values from the source field `u` defined on
+    Level["node_coords"] and Level["connect"].
+
+    Parameters:
+    Level (dict): Contains mesh information:
+                  - "node_coords": list of 1D arrays for x, y, z coordinates.
+                  - "connect": list of connectivity arrays in x, y, z.
+    u (array): Field values at the source mesh nodes.
+    node_coords_new (list): New nodal coordinates [x_new, y_new, z_new].
+
+    Returns:
+    array: Interpolated values at the new nodal coordinates.
     """
     ne_x = Level["connect"][0].shape[0]
     ne_y = Level["connect"][1].shape[0]
@@ -1122,93 +1139,83 @@ def interpolatePoints(Level, u, node_coords_new):
     nn_xn = len(node_coords_new[0])
     nn_yn = len(node_coords_new[1])
     nn_zn = len(node_coords_new[2])
-    tmp_ne_nn = nn_xn * nn_yn * nn_zn
+    total_points = nn_xn * nn_yn * nn_zn
+
     h_x = Level["node_coords"][0][1] - Level["node_coords"][0][0]
     h_y = Level["node_coords"][1][1] - Level["node_coords"][1][0]
     h_z = Level["node_coords"][2][1] - Level["node_coords"][2][0]
 
     def stepInterpolatePoints(ielt):
-        # Get nodal indices
-        izn, _ = jnp.divmod(ielt, (nn_xn) * (nn_yn))
-        iyn, _ = jnp.divmod(ielt, nn_xn)
-        iyn -= izn * nn_yn
-        ixn = jnp.mod(ielt, nn_xn)
+        izn, rem = jnp.divmod(ielt, nn_xn * nn_yn)
+        iyn, ixn = jnp.divmod(rem, nn_xn)
 
-        _x = node_coords_new[0][ixn, newax]
-        _y = node_coords_new[1][iyn, newax]
-        _z = node_coords_new[2][izn, newax]
+        _x = node_coords_new[0][ixn]
+        _y = node_coords_new[1][iyn]
+        _z = node_coords_new[2][izn]
 
-        x_comp = (ne_x - 1) * jnp.ones_like(_x)
-        y_comp = (ne_y - 1) * jnp.ones_like(_y)
-        z_comp = (ne_z - 1) * jnp.ones_like(_z)
+        # Determine coarse element indices
+        ielt_x = jnp.clip(
+            jnp.floor((_x - Level["node_coords"][0][0]) / h_x).astype(int), 0, ne_x - 1
+        )
+        ielt_y = jnp.clip(
+            jnp.floor((_y - Level["node_coords"][1][0]) / h_y).astype(int), 0, ne_y - 1
+        )
+        ielt_z = jnp.clip(
+            jnp.floor((_z - Level["node_coords"][2][0]) / h_z).astype(int), 0, ne_z - 1
+        )
 
-        x_comp2 = jnp.zeros_like(_x)
-        y_comp2 = jnp.zeros_like(_y)
-        z_comp2 = jnp.zeros_like(_z)
-
-        # Figure out which coarse element we are in
-        _floorx = jnp.floor((_x - Level["node_coords"][0][0]) / h_x)
-        _conx = jnp.concatenate((_floorx, x_comp))
-        _ielt_x = jnp.min(_conx)
-        _conx = jnp.concatenate((_ielt_x[newax], x_comp2))
-        ielt_x = jnp.max(_conx).T.astype(int)
-
-        _floory = jnp.floor((_y - Level["node_coords"][1][0]) / h_y)
-        _cony = jnp.concatenate((_floory, y_comp))
-        _ielt_y = jnp.min(_cony)
-        _cony = jnp.concatenate((_ielt_y[newax], y_comp2))
-        ielt_y = jnp.max(_cony).T.astype(int)
-
-        _floorz = jnp.floor((_z - Level["node_coords"][2][0]) / h_z)
-        _conz = jnp.concatenate((_floorz, z_comp))
-        _ielt_z = jnp.min(_conz).T.astype(int)
-        _conz = jnp.concatenate((_ielt_z[newax], z_comp2))
-        ielt_z = jnp.max(_conz).T.astype(int)
-
+        # Get node indices
         nodex = Level["connect"][0][ielt_x, :]
         nodey = Level["connect"][1][ielt_y, :]
         nodez = Level["connect"][2][ielt_z, :]
         node = nodex + nodey * nn_x + nodez * (nn_x * nn_y)
 
+        # Get coordinates of the coarse element nodes
         xx = Level["node_coords"][0][nodex]
         yy = Level["node_coords"][1][nodey]
         zz = Level["node_coords"][2][nodez]
 
+        # Bounding box corners
         xc0, xc1 = xx[0], xx[1]
         yc0, yc3 = yy[0], yy[3]
         zc0, zc5 = zz[0], zz[5]
 
-        # Evaluate shape functions associated with coarse nodes
-        Nc = jnp.concatenate(
-            compute3DN(
-                [_x, _y, _z], [xc0, xc1], [yc0, yc3], [zc0, zc5], [h_x, h_y, h_z]
-            )
+        # Compute shape functions
+        Nc = compute3DN(
+            [_x, _y, _z], [xc0, xc1], [yc0, yc3], [zc0, zc5], [h_x, h_y, h_z]
         )
-        # The where makes it zero outside the interpolation range
-        Nc = ((Nc >= -1e-2).all() & (Nc <= 1 + 1e-2).all()) * Nc
-        Nc = jnp.clip(Nc, 0.0, 1.0)
+
+        # Clip and mask invalid values
+        valid = jnp.logical_and((Nc >= -1e-2).all(), (Nc <= 1 + 1e-2).all())
+        Nc = jax.lax.select(valid, jnp.clip(Nc, 0.0, 1.0), jnp.zeros_like(Nc))
+
         return Nc @ u[node]
 
-    vstepInterpolatePoints = jax.vmap(stepInterpolatePoints)
-    return vstepInterpolatePoints(jnp.arange(tmp_ne_nn))
+    return jax.vmap(stepInterpolatePoints)(jnp.arange(total_points))
 
 
 @jax.jit
 def computeCoarseFineShapeFunctions(Coarse, Fine):
-    """computeCoarseFineShapeFunctions finds the shape functions of
-    the fine scale quadrature points for the coarse element
-    :param Coarse["node_coords"]: nodal coordinates of global coarse
-    :param Coarse["connect"]: indices to get coordinates of nodes of coarse element
-    :param Fine["node_coords"]: nodal coordinates of global fine
-    :param Fine["connect"]: indices to get x coordinates of nodes of fine element
-    :return Nc, dNcdx, dNcdy, dNcdz, _nodes.reshape(-1)
-    :return Nc: (Num fine elements, 8 quadrature, 8), coarse shape function for fine element
-    :return dNcdx: (Num fine elements, 8 quadrature, 8), coarse x-derivate shape function for fine element
-    :return dNcdy: (Num fine elements, 8 quadrature, 8), coarse y-derivate shape function for fine element
-    :return dNcdz: (Num fine elements, 8 quadrature, 8), coarse z-derivate shape function for fine element
-    :return _nodes: (Num fine elements * 8 * 8), coarse nodal indices
     """
-    # Get number of elements and nodes for both coarse and fine
+    Compute coarse shape functions and their derivatives at fine-scale
+    quadrature points, and return a sparse projection matrix.
+
+    Parameters:
+    Coarse (dict): Coarse mesh data.
+                   - "node_coords": list of 1D arrays for x, y, z coordinates.
+                   - "connect": list of connectivity arrays in x, y, z.
+    Fine (dict): Fine mesh data.
+                 - "node_coords": list of 1D arrays for x, y, z coordinates.
+                 - "connect": list of connectivity arrays in x, y, z.
+
+    Returns:
+    Nc (array): Coarse shape functions at fine quadrature points,
+                shape (n_fine_elem, 8, 8).
+    dNcdx, dNcdy, dNcdz (arrays): Derivatives of coarse shape functions,
+                                  each of shape (n_fine_elem, 8, 8).
+    test (BCOO): Sparse projection matrix from coarse nodes to fine quadrature.
+    """
+    # Mesh sizes
     nec_x, nec_y, nec_z = [Coarse["connect"][i].shape[0] for i in range(3)]
     nnc_x, nnc_y, nnc_z = [Coarse["node_coords"][i].shape[0] for i in range(3)]
     nnc = nnc_x * nnc_y * nnc_z
@@ -1216,19 +1223,22 @@ def computeCoarseFineShapeFunctions(Coarse, Fine):
     nef = nef_x * nef_y * nef_z
     nnf_x, nnf_y = [Fine["node_coords"][i].shape[0] for i in range(2)]
 
-    # Assume constant mesh sizes
+    # Coarse mesh spacing
     hc_x = Coarse["node_coords"][0][1] - Coarse["node_coords"][0][0]
     hc_y = Coarse["node_coords"][1][1] - Coarse["node_coords"][1][0]
     hc_z = Coarse["node_coords"][2][1] - Coarse["node_coords"][2][0]
-
-    # Get lower bounds of meshes
+    hc_xyz = hc_x * hc_y * hc_z
     xminc_x, xminc_y, xminc_z = [Coarse["node_coords"][i][0] for i in range(3)]
 
-    # Get shape functions and weights
-    coords_x = Fine["node_coords"][0][Fine["connect"][0][0, :]].reshape(-1, 1)
-    coords_y = Fine["node_coords"][1][Fine["connect"][1][0, :]].reshape(-1, 1)
-    coords_z = Fine["node_coords"][2][Fine["connect"][2][0, :]].reshape(-1, 1)
-    coords = jnp.concatenate([coords_x, coords_y, coords_z], axis=1)
+    # Reference shape functions for fine elements
+    coords = jnp.stack(
+        [
+            Fine["node_coords"][0][Fine["connect"][0][0, :]],
+            Fine["node_coords"][1][Fine["connect"][1][0, :]],
+            Fine["node_coords"][2][Fine["connect"][2][0, :]],
+        ],
+        axis=1,
+    )
     Nf, _, _ = computeQuad3dFemShapeFunctions_jax(coords)
 
     def stepComputeCoarseFineTerm(ieltf):
@@ -1237,121 +1247,133 @@ def computeCoarseFineShapeFunctions(Coarse, Fine):
         coords_y = Fine["node_coords"][1][Fine["connect"][1][iy, :]].reshape(-1, 1)
         coords_z = Fine["node_coords"][2][Fine["connect"][2][iz, :]].reshape(-1, 1)
 
-        # Do all of the quadrature points simultaneously
-        x = Nf @ coords_x
-        y = Nf @ coords_y
-        z = Nf @ coords_z
+        x = (Nf @ coords_x).reshape(-1)
+        y = (Nf @ coords_y).reshape(-1)
+        z = (Nf @ coords_z).reshape(-1)
 
-        x_comp = (nec_x - 1) * jnp.ones_like(x)
-        y_comp = (nec_y - 1) * jnp.ones_like(y)
-        z_comp = (nec_z - 1) * jnp.ones_like(z)
+        # Determine coarse element indices
+        ieltc_x = jnp.clip(jnp.floor((x - xminc_x) / hc_x).astype(int), 0, nec_x - 1)
+        ieltc_y = jnp.clip(jnp.floor((y - xminc_y) / hc_y).astype(int), 0, nec_y - 1)
+        ieltc_z = jnp.clip(jnp.floor((z - xminc_z) / hc_z).astype(int), 0, nec_z - 1)
 
-        # Figure out which coarse element we are in
-        _floorx = jnp.floor((x - xminc_x) / hc_x)
-        _conx = jnp.concatenate((_floorx, x_comp), axis=1)
-        ieltc_x = jnp.min(_conx, axis=1).T.astype(int)
-        _floory = jnp.floor((y - xminc_y) / hc_y)
-        _cony = jnp.concatenate((_floory, y_comp), axis=1)
-        ieltc_y = jnp.min(_cony, axis=1).T.astype(int)
-        _floorz = jnp.floor((z - xminc_z) / hc_z)
-        _conz = jnp.concatenate((_floorz, z_comp), axis=1)
-        ieltc_z = jnp.min(_conz, axis=1).T.astype(int)
-
-        x = x.reshape(-1)
-        y = y.reshape(-1)
-        z = z.reshape(-1)
-
-        def iqLoopMass(iq):
-            nodec_x = Coarse["connect"][0][ieltc_x[iq], :].astype(int)
-            nodec_y = Coarse["connect"][1][ieltc_y[iq], :].astype(int)
-            nodec_z = Coarse["connect"][2][ieltc_z[iq], :].astype(int)
+        def iqLoop(iq):
+            # Coarse element node indices
+            nodec_x = Coarse["connect"][0][ieltc_x[iq], :]
+            nodec_y = Coarse["connect"][1][ieltc_y[iq], :]
+            nodec_z = Coarse["connect"][2][ieltc_z[iq], :]
             nodes = nodec_x + nodec_y * nnc_x + nodec_z * nnc_x * nnc_y
 
-            _x = x[iq]
-            _y = y[iq]
-            _z = z[iq]
+            # Bounding box corners
+            xc0 = Coarse["node_coords"][0][nodec_x[0]]
+            xc1 = Coarse["node_coords"][0][nodec_x[1]]
+            yc0 = Coarse["node_coords"][1][nodec_y[0]]
+            yc3 = Coarse["node_coords"][1][nodec_y[3]]
+            zc0 = Coarse["node_coords"][2][nodec_z[0]]
+            zc5 = Coarse["node_coords"][2][nodec_z[5]]
 
-            xc0 = Coarse["node_coords"][0][Coarse["connect"][0][ieltc_x[iq], 0]]
-            xc1 = Coarse["node_coords"][0][Coarse["connect"][0][ieltc_x[iq], 1]]
-            yc0 = Coarse["node_coords"][1][Coarse["connect"][1][ieltc_y[iq], 0]]
-            yc3 = Coarse["node_coords"][1][Coarse["connect"][1][ieltc_y[iq], 3]]
-            zc0 = Coarse["node_coords"][2][Coarse["connect"][2][ieltc_z[iq], 0]]
-            zc5 = Coarse["node_coords"][2][Coarse["connect"][2][ieltc_z[iq], 5]]
+            _x, _y, _z = x[iq], y[iq], z[iq]
 
-            # Evaluate shape functions associated with coarse nodes
             Nc = compute3DN(
                 [_x, _y, _z], [xc0, xc1], [yc0, yc3], [zc0, zc5], [hc_x, hc_y, hc_z]
             )
 
-            # Evaluate shape functions associated with coarse nodes
-            dNcdx = jnp.array(
-                [
-                    ((-1) / hc_x * (yc3 - _y) / hc_y * (zc5 - _z) / hc_z),
-                    ((1) / hc_x * (yc3 - _y) / hc_y * (zc5 - _z) / hc_z),
-                    ((1) / hc_x * (_y - yc0) / hc_y * (zc5 - _z) / hc_z),
-                    ((-1) / hc_x * (_y - yc0) / hc_y * (zc5 - _z) / hc_z),
-                    ((-1) / hc_x * (yc3 - _y) / hc_y * (_z - zc0) / hc_z),
-                    ((1) / hc_x * (yc3 - _y) / hc_y * (_z - zc0) / hc_z),
-                    ((1) / hc_x * (_y - yc0) / hc_y * (_z - zc0) / hc_z),
-                    ((-1) / hc_x * (_y - yc0) / hc_y * (_z - zc0) / hc_z),
-                ]
+            dNcdx = (
+                jnp.array(
+                    [
+                        (-1 * (yc3 - _y) * (zc5 - _z)),
+                        (1 * (yc3 - _y) * (zc5 - _z)),
+                        (1 * (_y - yc0) * (zc5 - _z)),
+                        (-1 * (_y - yc0) * (zc5 - _z)),
+                        (-1 * (yc3 - _y) * (_z - zc0)),
+                        (1 * (yc3 - _y) * (_z - zc0)),
+                        (1 * (_y - yc0) * (_z - zc0)),
+                        (-1 * (_y - yc0) * (_z - zc0)),
+                    ]
+                )
+                / hc_xyz
             )
-            # Evaluate shape functions associated with coarse nodes
-            dNcdy = jnp.array(
-                [
-                    ((xc1 - _x) / hc_x * (-1) / hc_y * (zc5 - _z) / hc_z),
-                    ((_x - xc0) / hc_x * (-1) / hc_y * (zc5 - _z) / hc_z),
-                    ((_x - xc0) / hc_x * (1) / hc_y * (zc5 - _z) / hc_z),
-                    ((xc1 - _x) / hc_x * (1) / hc_y * (zc5 - _z) / hc_z),
-                    ((xc1 - _x) / hc_x * (-1) / hc_y * (_z - zc0) / hc_z),
-                    ((_x - xc0) / hc_x * (-1) / hc_y * (_z - zc0) / hc_z),
-                    ((_x - xc0) / hc_x * (1) / hc_y * (_z - zc0) / hc_z),
-                    ((xc1 - _x) / hc_x * (1) / hc_y * (_z - zc0) / hc_z),
-                ]
+
+            dNcdy = (
+                jnp.array(
+                    [
+                        ((xc1 - _x) * -1 * (zc5 - _z)),
+                        ((_x - xc0) * -1 * (zc5 - _z)),
+                        ((_x - xc0) * 1 * (zc5 - _z)),
+                        ((xc1 - _x) * 1 * (zc5 - _z)),
+                        ((xc1 - _x) * -1 * (_z - zc0)),
+                        ((_x - xc0) * -1 * (_z - zc0)),
+                        ((_x - xc0) * 1 * (_z - zc0)),
+                        ((xc1 - _x) * 1 * (_z - zc0)),
+                    ]
+                )
+                / hc_xyz
             )
-            # Evaluate shape functions associated with coarse nodes
-            dNcdz = jnp.array(
-                [
-                    ((xc1 - _x) / hc_x * (yc3 - _y) / hc_y * (-1) / hc_z),
-                    ((_x - xc0) / hc_x * (yc3 - _y) / hc_y * (-1) / hc_z),
-                    ((_x - xc0) / hc_x * (_y - yc0) / hc_y * (-1) / hc_z),
-                    ((xc1 - _x) / hc_x * (_y - yc0) / hc_y * (-1) / hc_z),
-                    ((xc1 - _x) / hc_x * (yc3 - _y) / hc_y * (1) / hc_z),
-                    ((_x - xc0) / hc_x * (yc3 - _y) / hc_y * (1) / hc_z),
-                    ((_x - xc0) / hc_x * (_y - yc0) / hc_y * (1) / hc_z),
-                    ((xc1 - _x) / hc_x * (_y - yc0) / hc_y * (1) / hc_z),
-                ]
+
+            dNcdz = (
+                jnp.array(
+                    [
+                        ((xc1 - _x) * (yc3 - _y) * -1),
+                        ((_x - xc0) * (yc3 - _y) * -1),
+                        ((_x - xc0) * (_y - yc0) * -1),
+                        ((xc1 - _x) * (_y - yc0) * -1),
+                        ((xc1 - _x) * (yc3 - _y) * 1),
+                        ((_x - xc0) * (yc3 - _y) * 1),
+                        ((_x - xc0) * (_y - yc0) * 1),
+                        ((xc1 - _x) * (_y - yc0) * 1),
+                    ]
+                )
+                / hc_xyz
             )
+
             return Nc, dNcdx, dNcdy, dNcdz, nodes
 
-        viqLoopMass = jax.vmap(iqLoopMass)
-        return viqLoopMass(jnp.arange(8))
+        return jax.vmap(iqLoop)(jnp.arange(8))
 
-    vstepComputeCoarseFineTerm = jax.vmap(stepComputeCoarseFineTerm)
-    Nc, dNcdx, dNcdy, dNcdz, _nodes = vstepComputeCoarseFineTerm(jnp.arange(nef))
-    _nodes = _nodes[:, 0, :]
-    indices = jnp.concatenate(
-        [_nodes.reshape(-1, 1), jnp.arange(_nodes.size).reshape(-1, 1)], axis=1
+    Nc, dNcdx, dNcdy, dNcdz, _nodes = jax.vmap(stepComputeCoarseFineTerm)(
+        jnp.arange(nef)
     )
+    _nodes = _nodes[:, 0, :]  # Only need one set of node indices per element
+
+    # Construct sparse projection matrix
+    indices = jnp.stack([_nodes.reshape(-1), jnp.arange(_nodes.size)], axis=1)
     test = jax.experimental.sparse.BCOO(
-        [jnp.ones(_nodes.size), indices], shape=(nnc, _nodes.size)
+        (jnp.ones(_nodes.size), indices), shape=(nnc, _nodes.size)
     )
     return [Nc, [dNcdx, dNcdy, dNcdz], test]
 
 
 def compute3DN(q, x, y, z, h):
-    N = jnp.array(
-        [
-            ((x[1] - q[0]) / h[0] * (y[1] - q[1]) / h[1] * (z[1] - q[2]) / h[2]),
-            ((q[0] - x[0]) / h[0] * (y[1] - q[1]) / h[1] * (z[1] - q[2]) / h[2]),
-            ((q[0] - x[0]) / h[0] * (q[1] - y[0]) / h[1] * (z[1] - q[2]) / h[2]),
-            ((x[1] - q[0]) / h[0] * (q[1] - y[0]) / h[1] * (z[1] - q[2]) / h[2]),
-            ((x[1] - q[0]) / h[0] * (y[1] - q[1]) / h[1] * (q[2] - z[0]) / h[2]),
-            ((q[0] - x[0]) / h[0] * (y[1] - q[1]) / h[1] * (q[2] - z[0]) / h[2]),
-            ((q[0] - x[0]) / h[0] * (q[1] - y[0]) / h[1] * (q[2] - z[0]) / h[2]),
-            ((x[1] - q[0]) / h[0] * (q[1] - y[0]) / h[1] * (q[2] - z[0]) / h[2]),
-        ]
+    """
+    Compute trilinear shape functions for a hexahedral element at a given point.
+
+    Parameters:
+    q (list or array): Evaluation point [xq, yq, zq].
+    x (list): x-coordinates of the element's bounding box [x0, x1].
+    y (list): y-coordinates of the element's bounding box [y0, y1].
+    z (list): z-coordinates of the element's bounding box [z0, z1].
+    h (list): Element sizes in x, y, z directions [hx, hy, hz].
+
+    Returns:
+    array: Shape function values at point q, shape (8,).
+    """
+    inv_vol = 1.0 / (h[0] * h[1] * h[2])
+
+    N = (
+        jnp.array(
+            [
+                (x[1] - q[0]) * (y[1] - q[1]) * (z[1] - q[2]),
+                (q[0] - x[0]) * (y[1] - q[1]) * (z[1] - q[2]),
+                (q[0] - x[0]) * (q[1] - y[0]) * (z[1] - q[2]),
+                (x[1] - q[0]) * (q[1] - y[0]) * (z[1] - q[2]),
+                (x[1] - q[0]) * (y[1] - q[1]) * (q[2] - z[0]),
+                (q[0] - x[0]) * (y[1] - q[1]) * (q[2] - z[0]),
+                (q[0] - x[0]) * (q[1] - y[0]) * (q[2] - z[0]),
+                (x[1] - q[0]) * (q[1] - y[0]) * (q[2] - z[0]),
+            ]
+        )
+        * inv_vol
     )
+
     return N
 
 
@@ -1359,19 +1381,41 @@ def compute3DN(q, x, y, z, h):
 def computeCoarseTprimeMassTerm_jax(
     Levels, Tprimef, Tprimem, L3rhocp, L2rhocp, dt, Shapes, Vcu, Vmu
 ):
+    """
+    Compute coarse-scale mass terms from fine and medium-scale T' fields.
 
+    This function integrates the T' correction terms from Level 3 (fine)
+    and Level 2 (medium) and projects them to Level 1 and Level 2 using
+    precomputed shape transfer operators.
+
+    Parameters:
+    Levels (dict): Multilevel mesh hierarchy with keys [1, 2, 3].
+    Tprimef (array): Fine-scale T' field (Level 3).
+    Tprimem (array): Medium-scale T' field (Level 2).
+    L3rhocp (array): rhocp values at Level 3 nodes.
+    L2rhocp (array): rhocp values at Level 2 nodes.
+    dt (float): Time step size.
+    Shapes (list): Shape transfer operators between levels.
+                   Shapes[0]: L2 → L1
+                   Shapes[1]: L3 → L1
+                   Shapes[2]: L3 → L2
+    Vcu (array): Accumulator for Level 1 correction.
+    Vmu (array): Accumulator for Level 2 correction.
+
+    Returns:
+    Vcu (array): Updated Level 1 correction term.
+    Vmu (array): Updated Level 2 correction term.
+    """
+    # Subtract initial T' values
     Tprimef_new = Tprimef - Levels[3]["Tprime0"]
     Tprimem_new = Tprimem - Levels[2]["Tprime0"]
 
-    # Level 3
-    nef_x = Levels[3]["connect"][0].shape[0]
-    nef_y = Levels[3]["connect"][1].shape[0]
-    nef_z = Levels[3]["connect"][2].shape[0]
+    # Level 3 setup
+    nef_x, nef_y, nef_z = [Levels[3]["connect"][i].shape[0] for i in range(3)]
     nef = nef_x * nef_y * nef_z
     nnf_x = Levels[3]["node_coords"][0].shape[0]
     nnf_y = Levels[3]["node_coords"][1].shape[0]
 
-    # Level 3 Get shape functions and weights
     coordsf = getSampleCoords(Levels[3])
     Nf, _, wqf = computeQuad3dFemShapeFunctions_jax(coordsf)
 
@@ -1380,37 +1424,34 @@ def computeCoarseTprimeMassTerm_jax(
     _Tprimef = multiply(
         Nf @ Tprimef_new[idxf], jnp.matmul(Nf, L3rhocp[idxf]).mean(axis=0)
     )
+
     _data1 = multiply(
-        multiply(-Shapes[1][0], _Tprimef.T[:, :, newax]),
-        (1 / dt) * wqf[newax, newax, :],
-    ).sum(axis=2)
-    _data2 = multiply(
-        multiply(-Shapes[2][0], _Tprimef.T[:, :, newax]),
-        (1 / dt) * wqf[newax, newax, :],
+        multiply(-Shapes[1][0], _Tprimef.T[:, :, None]), (1 / dt) * wqf[None, None, :]
     ).sum(axis=2)
 
-    # Level 2
-    nem_x = Levels[2]["connect"][0].shape[0]
-    nem_y = Levels[2]["connect"][1].shape[0]
-    nem_z = Levels[2]["connect"][2].shape[0]
+    _data2 = multiply(
+        multiply(-Shapes[2][0], _Tprimef.T[:, :, None]), (1 / dt) * wqf[None, None, :]
+    ).sum(axis=2)
+
+    # Level 2 setup
+    nem_x, nem_y, nem_z = [Levels[2]["connect"][i].shape[0] for i in range(3)]
     nem = nem_x * nem_y * nem_z
     nnm_x = Levels[2]["node_coords"][0].shape[0]
     nnm_y = Levels[2]["node_coords"][1].shape[0]
 
-    # Level 2 Get shape functions and weights
     coordsm = getSampleCoords(Levels[2])
     Nm, _, wqm = computeQuad3dFemShapeFunctions_jax(coordsm)
 
-    # Level 2
     _, _, _, idxm = convert2XYZ(jnp.arange(nem), nem_x, nem_y, nnm_x, nnm_y)
     _Tprimem = multiply(
         Nm @ Tprimem_new[idxm], jnp.matmul(Nm, L2rhocp[idxm]).mean(axis=0)
     )
+
     _data3 = multiply(
-        multiply(-Shapes[0][0], _Tprimem.T[:, :, newax]),
-        (1 / dt) * wqm[newax, newax, :],
+        multiply(-Shapes[0][0], _Tprimem.T[:, :, None]), (1 / dt) * wqm[None, None, :]
     ).sum(axis=2)
 
+    # Project to coarse levels
     Vcu += Shapes[1][2] @ _data1.reshape(-1) + Shapes[0][2] @ _data3.reshape(-1)
     Vmu += Shapes[2][2] @ _data2.reshape(-1)
 
@@ -1419,86 +1460,89 @@ def computeCoarseTprimeMassTerm_jax(
 
 @jax.jit
 def computeCoarseTprimeTerm_jax(Levels, L3k, L2k, Shapes):
-    # Level 3
-    nef_x = Levels[3]["connect"][0].shape[0]
-    nef_y = Levels[3]["connect"][1].shape[0]
-    nef_z = Levels[3]["connect"][2].shape[0]
+    """
+    Compute coarse-scale projection of T' gradient terms from fine and medium levels.
+
+    This function computes the gradient of the T' field at Level 3 and Level 2,
+    multiplies it by thermal conductivity, and projects the result to coarser
+    levels using precomputed shape transfer operators.
+
+    Parameters:
+    Levels (dict): Multilevel mesh hierarchy with keys [1, 2, 3].
+                   Each level contains "connect", "node_coords", and "Tprime0".
+    L3k (array): Thermal conductivity at Level 3 nodes.
+    L2k (array): Thermal conductivity at Level 2 nodes.
+    Shapes (list): Shape transfer operators between levels.
+                   Shapes[0]: L2 → L1
+                   Shapes[1]: L3 → L1
+                   Shapes[2]: L3 → L2
+
+    Returns:
+    Vcu (array): Coarse-scale correction term for Level 1.
+    Vmu (array): Coarse-scale correction term for Level 2.
+    """
+    # Level 3 setup
+    nef_x, nef_y, nef_z = [Levels[3]["connect"][i].shape[0] for i in range(3)]
     nef = nef_x * nef_y * nef_z
     nnf_x = Levels[3]["node_coords"][0].shape[0]
     nnf_y = Levels[3]["node_coords"][1].shape[0]
 
-    # Level 3 Get shape functions and weights
     coordsf = getSampleCoords(Levels[3])
     Nf, dNdxf, wqf = computeQuad3dFemShapeFunctions_jax(coordsf)
 
-    # Level 3
-    # idxf: (8, nef), indexing in Levels[3]["Tprime0"] for later shape function use
     _, _, _, idxf = convert2XYZ(jnp.arange(nef), nef_x, nef_y, nnf_x, nnf_y)
-    _Tprimef = Levels[3]["Tprime0"][idxf]
+    Tprimef = Levels[3]["Tprime0"][idxf]
     L3kMean = jnp.matmul(Nf, L3k[idxf]).mean(axis=0)
-    dTprimefdx = multiply(L3kMean, (dNdxf[:, :, 0] @ _Tprimef))
-    dTprimefdy = multiply(L3kMean, (dNdxf[:, :, 1] @ _Tprimef))
-    dTprimefdz = multiply(L3kMean, (dNdxf[:, :, 2] @ _Tprimef))
 
-    _data1 = multiply(
-        multiply(-Shapes[1][1][0], dTprimefdx.T[:, :, newax]),
-        wqf[newax, newax, :],
-    ).sum(axis=2)
-    _data1 += multiply(
-        multiply(-Shapes[1][1][1], dTprimefdy.T[:, :, newax]),
-        wqf[newax, newax, :],
-    ).sum(axis=2)
-    _data1 += multiply(
-        multiply(-Shapes[1][1][2], dTprimefdz.T[:, :, newax]),
-        wqf[newax, newax, :],
-    ).sum(axis=2)
+    dTprimefdx = multiply(L3kMean, dNdxf[:, :, 0] @ Tprimef)
+    dTprimefdy = multiply(L3kMean, dNdxf[:, :, 1] @ Tprimef)
+    dTprimefdz = multiply(L3kMean, dNdxf[:, :, 2] @ Tprimef)
 
-    _data2 = multiply(
-        multiply(-Shapes[2][1][0], dTprimefdx.T[:, :, newax]),
-        wqf[newax, newax, :],
-    ).sum(axis=2)
-    _data2 += multiply(
-        multiply(-Shapes[2][1][1], dTprimefdy.T[:, :, newax]),
-        wqf[newax, newax, :],
-    ).sum(axis=2)
-    _data2 += multiply(
-        multiply(-Shapes[2][1][2], dTprimefdz.T[:, :, newax]),
-        wqf[newax, newax, :],
-    ).sum(axis=2)
+    # Project to Level 1 and Level 2
+    _data1 = sum(
+        [
+            multiply(
+                multiply(-Shapes[1][1][i], d.T[:, :, None]), wqf[None, None, :]
+            ).sum(axis=2)
+            for i, d in enumerate([dTprimefdx, dTprimefdy, dTprimefdz])
+        ]
+    )
+    _data2 = sum(
+        [
+            multiply(
+                multiply(-Shapes[2][1][i], d.T[:, :, None]), wqf[None, None, :]
+            ).sum(axis=2)
+            for i, d in enumerate([dTprimefdx, dTprimefdy, dTprimefdz])
+        ]
+    )
 
-    # Level 2
-    nem_x = Levels[2]["connect"][0].shape[0]
-    nem_y = Levels[2]["connect"][1].shape[0]
-    nem_z = Levels[2]["connect"][2].shape[0]
+    # Level 2 setup
+    nem_x, nem_y, nem_z = [Levels[2]["connect"][i].shape[0] for i in range(3)]
     nem = nem_x * nem_y * nem_z
     nnm_x = Levels[2]["node_coords"][0].shape[0]
     nnm_y = Levels[2]["node_coords"][1].shape[0]
 
-    # Level 2 Get shape functions and weights
     coordsm = getSampleCoords(Levels[2])
     Nm, dNdxm, wqm = computeQuad3dFemShapeFunctions_jax(coordsm)
 
-    # Level 2
     _, _, _, idxm = convert2XYZ(jnp.arange(nem), nem_x, nem_y, nnm_x, nnm_y)
-    _Tprimem = Levels[2]["Tprime0"][idxm]
+    Tprimem = Levels[2]["Tprime0"][idxm]
     L2kMean = jnp.matmul(Nm, L2k[idxm]).mean(axis=0)
-    dTprimemdx = multiply(L2kMean, (dNdxm[:, :, 0] @ _Tprimem))
-    dTprimemdy = multiply(L2kMean, (dNdxm[:, :, 1] @ _Tprimem))
-    dTprimemdz = multiply(L2kMean, (dNdxm[:, :, 2] @ _Tprimem))
 
-    _data3 = multiply(
-        multiply(-Shapes[0][1][0], dTprimemdx.T[:, :, newax]),
-        wqm[newax, newax, :],
-    ).sum(axis=2)
-    _data3 += multiply(
-        multiply(-Shapes[0][1][1], dTprimemdy.T[:, :, newax]),
-        wqm[newax, newax, :],
-    ).sum(axis=2)
-    _data3 += multiply(
-        multiply(-Shapes[0][1][2], dTprimemdz.T[:, :, newax]),
-        wqm[newax, newax, :],
-    ).sum(axis=2)
+    dTprimemdx = multiply(L2kMean, dNdxm[:, :, 0] @ Tprimem)
+    dTprimemdy = multiply(L2kMean, dNdxm[:, :, 1] @ Tprimem)
+    dTprimemdz = multiply(L2kMean, dNdxm[:, :, 2] @ Tprimem)
 
+    _data3 = sum(
+        [
+            multiply(
+                multiply(-Shapes[0][1][i], d.T[:, :, None]), wqm[None, None, :]
+            ).sum(axis=2)
+            for i, d in enumerate([dTprimemdx, dTprimemdy, dTprimemdz])
+        ]
+    )
+
+    # Final projection to coarse levels
     Vcu = Shapes[1][2] @ _data1.reshape(-1) + Shapes[0][2] @ _data3.reshape(-1)
     Vmu = Shapes[2][2] @ _data2.reshape(-1)
 
@@ -1507,48 +1551,126 @@ def computeCoarseTprimeTerm_jax(Levels, L3k, L2k, Shapes):
 
 @jax.jit
 def assignBCs(RHS, Levels):
+    """
+    Apply Dirichlet boundary conditions to the right-hand side vector.
+
+    This function sets prescribed values at boundary nodes for Level 1
+    based on the boundary condition indices and values stored in the
+    Levels dictionary.
+
+    Parameters:
+    RHS (array): Right-hand side vector to be modified.
+    Levels (dict): Multilevel mesh hierarchy containing:
+                   - Levels[1]["BC"]: list of boundary node index arrays
+                     [x0, x1, y0, y1, z0]
+                   - Levels[1]["conditions"]: dict with keys "x", "y", "z"
+                     containing prescribed values.
+
+    Returns:
+    array: Modified RHS vector with boundary conditions applied.
+    """
     _RHS = RHS
-    _RHS = _RHS.at[Levels[1]["BC"][2]].set(Levels[1]["conditions"]["y"][0])
-    _RHS = _RHS.at[Levels[1]["BC"][3]].set(Levels[1]["conditions"]["y"][1])
-    _RHS = _RHS.at[Levels[1]["BC"][0]].set(Levels[1]["conditions"]["x"][0])
-    _RHS = _RHS.at[Levels[1]["BC"][1]].set(Levels[1]["conditions"]["x"][1])
-    _RHS = _RHS.at[Levels[1]["BC"][4]].set(Levels[1]["conditions"]["z"][0])
-    # _RHS = _RHS.at[Levels[1]["BC"][5]].set(Levels[1]["conditions"]["z"][1])
+    _RHS = _RHS.at[Levels[1]["BC"][2]].set(Levels[1]["conditions"]["y"][0])  # y-min
+    _RHS = _RHS.at[Levels[1]["BC"][3]].set(Levels[1]["conditions"]["y"][1])  # y-max
+    _RHS = _RHS.at[Levels[1]["BC"][0]].set(Levels[1]["conditions"]["x"][0])  # x-min
+    _RHS = _RHS.at[Levels[1]["BC"][1]].set(Levels[1]["conditions"]["x"][1])  # x-max
+    _RHS = _RHS.at[Levels[1]["BC"][4]].set(Levels[1]["conditions"]["z"][0])  # z-min
+
     return _RHS
 
 
 @jax.jit
 def assignBCsFine(RHS, TfAll, BC):
+    """
+    Apply Dirichlet boundary conditions to the fine-level RHS vector.
+
+    This function sets the RHS values at boundary nodes using the
+    corresponding values from the full fine-scale solution `TfAll`.
+
+    Parameters:
+    RHS (array): Right-hand side vector to be modified.
+    TfAll (array): Full fine-scale solution field.
+    BC (list): List of boundary node index arrays [x0, x1, y0, y1, z0].
+
+    Returns:
+    array: Modified RHS vector with boundary values applied.
+    """
     _RHS = RHS
-    _RHS = _RHS.at[BC[2]].set(TfAll[BC[2]])
-    _RHS = _RHS.at[BC[3]].set(TfAll[BC[3]])
-    _RHS = _RHS.at[BC[0]].set(TfAll[BC[0]])
-    _RHS = _RHS.at[BC[1]].set(TfAll[BC[1]])
-    _RHS = _RHS.at[BC[4]].set(TfAll[BC[4]])
-    # _RHS = _RHS.at[BC[5]].set(TfAll[BC[5]])
+    _RHS = _RHS.at[BC[2]].set(TfAll[BC[2]])  # y-min
+    _RHS = _RHS.at[BC[3]].set(TfAll[BC[3]])  # y-max
+    _RHS = _RHS.at[BC[0]].set(TfAll[BC[0]])  # x-min
+    _RHS = _RHS.at[BC[1]].set(TfAll[BC[1]])  # x-max
+    _RHS = _RHS.at[BC[4]].set(TfAll[BC[4]])  # z-min
     return _RHS
 
 
 @partial(jax.jit, static_argnames=["nn"])
 def bincount(N, D, nn):
+    """
+    Perform a weighted bin count operation.
+
+    This function accumulates values from `D` into bins specified by `N`,
+    producing a 1D array of length `nn`.
+
+    Parameters:
+    N (array): Bin indices (integer array).
+    D (array): Values to accumulate (same shape as N).
+    nn (int): Total number of bins (output length).
+
+    Returns:
+    array: Binned sum of values, shape (nn,).
+    """
     return jnp.bincount(N, D, length=nn)
 
 
 @jax.jit
 def getOverlapRegion(node_coords, nx, ny):
+    """
+    Compute flattened global node indices for a structured 3D grid.
+
+    This function generates a 1D array of global node indices based on
+    the Cartesian product of x, y, and z coordinate arrays. It assumes
+    a structured grid with dimensions (nx, ny, nz).
+
+    Parameters:
+    node_coords (list): List of 1D arrays [x, y, z] representing node coordinates.
+    nx (int): Number of nodes in the x-direction.
+    ny (int): Number of nodes in the y-direction.
+
+    Returns:
+    array: Flattened global node indices corresponding to the overlap region.
+    """
     _x = jnp.tile(
         node_coords[0], node_coords[1].shape[0] * node_coords[2].shape[0]
     ).reshape(-1)
+
     _y = jnp.repeat(
         jnp.tile(node_coords[1], node_coords[2].shape[0]), node_coords[0].shape[0]
     ).reshape(-1)
+
     _z = jnp.repeat(node_coords[2], node_coords[0].shape[0] * node_coords[1].shape[0])
+
     return _x + _y * nx + _z * nx * ny
 
 
 @jax.jit
 def jit_constrain_v(vtot, Level):
-    # jnp.clip is equivalent to jnp.minimum(a_max, np.maximum(a, a_min))
+    """
+    Constrain a 3D vector within the bounding box defined in the mesh level.
+
+    This function clips each component of the input vector `vtot` to lie
+    within the bounds specified in `Level["bounds"]`.
+
+    Parameters:
+    vtot (list): A list of 3 elements [vx, vy, vz] representing a 3D vector.
+    Level (dict): Contains bounding box limits under:
+                  - Level["bounds"]["ix"]: (xmin, xmax)
+                  - Level["bounds"]["iy"]: (ymin, ymax)
+                  - Level["bounds"]["iz"]: (zmin, zmax)
+
+    Returns:
+    list: Clipped 3D vector [vx_clipped, vy_clipped, vz_clipped].
+    """
     vtot = [
         jnp.clip(vtot[0], Level["bounds"]["ix"][0], Level["bounds"]["ix"][1]),
         jnp.clip(vtot[1], Level["bounds"]["iy"][0], Level["bounds"]["iy"][1]),
@@ -1559,72 +1681,150 @@ def jit_constrain_v(vtot, Level):
 
 @jax.jit
 def move_fine_mesh(node_coords, element_size, v):
+    """
+    Shift a structured fine mesh in space based on a displacement vector.
+
+    This function computes the new coordinates of a structured fine mesh
+    by translating it in the x, y, and z directions according to the
+    displacement vector `v`, scaled by the element size.
+
+    Parameters:
+    node_coords (list): Original node coordinates [x, y, z] as 1D arrays.
+    element_size (list): Element sizes [hx, hy, hz] in each direction.
+    v (array): Displacement vector [vx, vy, vz].
+
+    Returns:
+    list: New node coordinates [xnf_x, xnf_y, xnf_z] after translation.
+    list: Integer shift indices [vx_, vy_, vz_] used for the translation.
+    """
     vx_ = (v[0] / element_size[0] + 1e-2).astype(int)
     vy_ = (v[1] / element_size[1] + 1e-2).astype(int)
     vz_ = (v[2] / element_size[2] + 1e-2).astype(int)
+
     xnf_x = node_coords[0] + element_size[0] * vx_
     xnf_y = node_coords[1] + element_size[1] * vy_
     xnf_z = node_coords[2] + element_size[2] * vz_
+
     return [xnf_x, xnf_y, xnf_z], [vx_, vy_, vz_]
 
 
 @jax.jit
 def update_overlap_nodes_coords(Level, vcon, element_size, ele_ratio):
+    """
+    Update the overlap node indices and coordinates based on a displacement vector.
+
+    This function shifts the overlap region of a mesh by updating both the
+    node indices and physical coordinates using the displacement vector `vcon`.
+
+    Parameters:
+    Level (dict): Mesh level containing original overlap node indices and coordinates.
+                  - "orig_overlap_nodes": list of original node index arrays [x, y, z].
+                  - "orig_overlap_coors": list of original coordinate arrays [x, y, z].
+    vcon (array): Displacement vector [vx, vy, vz].
+    element_size (array): Element sizes [hx, hy, hz].
+    ele_ratio (array): Ratio of coarse-to-fine elements in each direction.
+
+    Returns:
+    dict: Updated Level dictionary with new "overlapNodes" and "overlapCoords".
+    """
+    shift = [
+        (vcon[0] / element_size[0] + 1e-2).astype(int),
+        (vcon[1] / element_size[1] + 1e-2).astype(int),
+        (vcon[2] / element_size[2] + 1e-2).astype(int),
+    ]
+
     Level["overlapNodes"] = [
-        Level["orig_overlap_nodes"][0]
-        + ele_ratio[0] * (vcon[0] / element_size[0] + 1e-2).astype(int),
-        Level["orig_overlap_nodes"][1]
-        + ele_ratio[1] * (vcon[1] / element_size[1] + 1e-2).astype(int),
-        Level["orig_overlap_nodes"][2]
-        + ele_ratio[2] * (vcon[2] / element_size[2] + 1e-2).astype(int),
+        Level["orig_overlap_nodes"][0] + ele_ratio[0] * shift[0],
+        Level["orig_overlap_nodes"][1] + ele_ratio[1] * shift[1],
+        Level["orig_overlap_nodes"][2] + ele_ratio[2] * shift[2],
     ]
+
     Level["overlapCoords"] = [
-        Level["orig_overlap_coors"][0]
-        + element_size[0] * (vcon[0] / element_size[0] + 1e-2).astype(int),
-        Level["orig_overlap_coors"][1]
-        + element_size[1] * (vcon[1] / element_size[1] + 1e-2).astype(int),
-        Level["orig_overlap_coors"][2]
-        + element_size[2] * (vcon[2] / element_size[2] + 1e-2).astype(int),
+        Level["orig_overlap_coors"][0] + element_size[0] * shift[0],
+        Level["orig_overlap_coors"][1] + element_size[1] * shift[1],
+        Level["orig_overlap_coors"][2] + element_size[2] * shift[2],
     ]
+
     return Level
 
 
 @jax.jit
 def update_overlap_nodes_coords_L1L2(Level, vcon, element_size, powder_layer):
+    """
+    Update overlap node indices and coordinates for Level 1/2 with powder layer offset.
+
+    This function shifts the overlap region of a mesh by updating both the
+    node indices and physical coordinates using the displacement vector `vcon`,
+    accounting for an additional powder layer in the z-direction.
+
+    Parameters:
+    Level (dict): Mesh level containing original overlap node indices and coordinates.
+                  - "orig_overlap_nodes": list of original node index arrays [x, y, z].
+                  - "orig_overlap_coors": list of original coordinate arrays [x, y, z].
+    vcon (array): Displacement vector [vx, vy, vz].
+    element_size (array): Element sizes [hx, hy, hz].
+    powder_layer (float): Additional offset in the z-direction.
+
+    Returns:
+    dict: Updated Level dictionary with new "overlapNodes" and "overlapCoords".
+    """
+    shift_x = (vcon[0] / element_size[0] + 1e-2).astype(int)
+    shift_y = (vcon[1] / element_size[1] + 1e-2).astype(int)
+    shift_z = ((vcon[2] + powder_layer) / element_size[2] + 1e-2).astype(int)
+
     Level["overlapNodes"] = [
-        Level["orig_overlap_nodes"][0] + (vcon[0] / element_size[0] + 1e-2).astype(int),
-        Level["orig_overlap_nodes"][1] + (vcon[1] / element_size[1] + 1e-2).astype(int),
-        Level["orig_overlap_nodes"][2]
-        + ((vcon[2] + powder_layer) / element_size[2] + 1e-2).astype(int),
+        Level["orig_overlap_nodes"][0] + shift_x,
+        Level["orig_overlap_nodes"][1] + shift_y,
+        Level["orig_overlap_nodes"][2] + shift_z,
     ]
+
     Level["overlapCoords"] = [
-        Level["orig_overlap_coors"][0]
-        + element_size[0] * (vcon[0] / element_size[0] + 1e-2).astype(int),
-        Level["orig_overlap_coors"][1]
-        + element_size[1] * (vcon[1] / element_size[1] + 1e-2).astype(int),
+        Level["orig_overlap_coors"][0] + element_size[0] * shift_x,
+        Level["orig_overlap_coors"][1] + element_size[1] * shift_y,
         Level["orig_overlap_coors"][2] + element_size[2] * (vcon[2] / element_size[2]),
     ]
+
     return Level
 
 
 @jax.jit
 def update_overlap_nodes_coords_L2(Level, vcon, element_size, ele_ratio):
+    """
+    Update overlap node indices and coordinates for Level 2 based on displacement.
+
+    This function shifts the overlap region of Level 2 by updating both the
+    node indices and physical coordinates using the displacement vector `vcon`
+    and the element-to-node ratio `ele_ratio`.
+
+    Parameters:
+    Level (dict): Mesh level containing original overlap node indices and coordinates.
+                  - "orig_overlap_nodes_L2": list of original node index arrays [x, y, z].
+                  - "orig_overlap_coors_L2": list of original coordinate arrays [x, y, z].
+    vcon (array): Displacement vector [vx, vy, vz].
+    element_size (array): Element sizes [hx, hy, hz].
+    ele_ratio (array): Ratio of coarse-to-fine elements in each direction.
+
+    Returns:
+    dict: Updated Level dictionary with new "overlapNodes_L2" and "overlapCoords_L2".
+    """
+    shift = [
+        (vcon[0] / element_size[0] + 1e-2).astype(int),
+        (vcon[1] / element_size[1] + 1e-2).astype(int),
+        (vcon[2] / element_size[2] + 1e-2).astype(int),
+    ]
+
     Level["overlapNodes_L2"] = [
-        Level["orig_overlap_nodes_L2"][0]
-        + ele_ratio[0] * (vcon[0] / element_size[0] + 1e-2).astype(int),
-        Level["orig_overlap_nodes_L2"][1]
-        + ele_ratio[1] * (vcon[1] / element_size[1] + 1e-2).astype(int),
-        Level["orig_overlap_nodes_L2"][2]
-        + ele_ratio[2] * (vcon[2] / element_size[2] + 1e-2).astype(int),
+        Level["orig_overlap_nodes_L2"][0] + ele_ratio[0] * shift[0],
+        Level["orig_overlap_nodes_L2"][1] + ele_ratio[1] * shift[1],
+        Level["orig_overlap_nodes_L2"][2] + ele_ratio[2] * shift[2],
     ]
+
     Level["overlapCoords_L2"] = [
-        Level["orig_overlap_coors_L2"][0]
-        + element_size[0] * (vcon[0] / element_size[0] + 1e-2).astype(int),
-        Level["orig_overlap_coors_L2"][1]
-        + element_size[1] * (vcon[1] / element_size[1] + 1e-2).astype(int),
-        Level["orig_overlap_coors_L2"][2]
-        + element_size[2] * (vcon[2] / element_size[2] + 1e-2).astype(int),
+        Level["orig_overlap_coors_L2"][0] + element_size[0] * shift[0],
+        Level["orig_overlap_coors_L2"][1] + element_size[1] * shift[1],
+        Level["orig_overlap_coors_L2"][2] + element_size[2] * shift[2],
     ]
+
     return Level
 
 
@@ -2126,11 +2326,11 @@ def computeL1TprimeTerms_Part1(Levels, ne_nn, L3k, Shapes, L2k):
     L3kMean = jnp.matmul(Nf, L3k[idxf]).mean(axis=0)
     dL3Tp0dX = [multiply(L3kMean, (dNdxf[:, :, i] @ _L3Tp0)) for i in range(3)]
 
-    _wqf = wqf[newax, newax, :]
+    _wqf = wqf[None, None, :]
     _dL3L1dX = Shapes[1][1]
-    _1 = multiply(multiply(-_dL3L1dX[0], dL3Tp0dX[0].T[:, :, newax]), _wqf).sum(axis=2)
-    _1 += multiply(multiply(-_dL3L1dX[1], dL3Tp0dX[1].T[:, :, newax]), _wqf).sum(axis=2)
-    _1 += multiply(multiply(-_dL3L1dX[2], dL3Tp0dX[2].T[:, :, newax]), _wqf).sum(axis=2)
+    _1 = multiply(multiply(-_dL3L1dX[0], dL3Tp0dX[0].T[:, :, None]), _wqf).sum(axis=2)
+    _1 += multiply(multiply(-_dL3L1dX[1], dL3Tp0dX[1].T[:, :, None]), _wqf).sum(axis=2)
+    _1 += multiply(multiply(-_dL3L1dX[2], dL3Tp0dX[2].T[:, :, None]), _wqf).sum(axis=2)
 
     # Level 2 calculations
     coordsm = getSampleCoords(Levels[2])
@@ -2147,11 +2347,11 @@ def computeL1TprimeTerms_Part1(Levels, ne_nn, L3k, Shapes, L2k):
     L2kMean = jnp.matmul(Nm, L2k[idxm]).mean(axis=0)
     dL2Tp0dX = [multiply(L2kMean, (dNdxm[:, :, i] @ _L2Tp0)) for i in range(3)]
 
-    _wqm = wqm[newax, newax, :]
+    _wqm = wqm[None, None, :]
     _dL2L1dX = Shapes[0][1]
-    _2 = multiply(multiply(-_dL2L1dX[0], dL2Tp0dX[0].T[:, :, newax]), _wqm).sum(axis=2)
-    _2 += multiply(multiply(-_dL2L1dX[1], dL2Tp0dX[1].T[:, :, newax]), _wqm).sum(axis=2)
-    _2 += multiply(multiply(-_dL2L1dX[2], dL2Tp0dX[2].T[:, :, newax]), _wqm).sum(axis=2)
+    _2 = multiply(multiply(-_dL2L1dX[0], dL2Tp0dX[0].T[:, :, None]), _wqm).sum(axis=2)
+    _2 += multiply(multiply(-_dL2L1dX[1], dL2Tp0dX[1].T[:, :, None]), _wqm).sum(axis=2)
+    _2 += multiply(multiply(-_dL2L1dX[2], dL2Tp0dX[2].T[:, :, None]), _wqm).sum(axis=2)
 
     return Shapes[1][2] @ _1.reshape(-1) + Shapes[0][2] @ _2.reshape(-1)
 
@@ -2189,16 +2389,16 @@ def computeL2TprimeTerms_Part1(Levels, ne_nn, L3Tprime0, L3k, Shapes):
     dL3Tp0dz = multiply(L3kMean, (dNdxf[:, :, 2] @ _L3Tp0))
 
     _1 = multiply(
-        multiply(-Shapes[2][1][0], dL3Tp0dx.T[:, :, newax]),
-        wqf[newax, newax, :],
+        multiply(-Shapes[2][1][0], dL3Tp0dx.T[:, :, None]),
+        wqf[None, None, :],
     ).sum(axis=2)
     _1 += multiply(
-        multiply(-Shapes[2][1][1], dL3Tp0dy.T[:, :, newax]),
-        wqf[newax, newax, :],
+        multiply(-Shapes[2][1][1], dL3Tp0dy.T[:, :, None]),
+        wqf[None, None, :],
     ).sum(axis=2)
     _1 += multiply(
-        multiply(-Shapes[2][1][2], dL3Tp0dz.T[:, :, newax]),
-        wqf[newax, newax, :],
+        multiply(-Shapes[2][1][2], dL3Tp0dz.T[:, :, None]),
+        wqf[None, None, :],
     ).sum(axis=2)
 
     return Shapes[2][2] @ _1.reshape(-1)
@@ -2291,8 +2491,8 @@ def computeL1TprimeTerms_Part2(
     )
     _L3Tp = multiply(Nf @ L3Tp_new[idxf], jnp.matmul(Nf, L3rhocp[idxf]).mean(axis=0))
     _1 = multiply(
-        multiply(-Shapes[1][0], _L3Tp.T[:, :, newax]),
-        (1 / dt) * wqf[newax, newax, :],
+        multiply(-Shapes[1][0], _L3Tp.T[:, :, None]),
+        (1 / dt) * wqf[None, None, :],
     ).sum(axis=2)
 
     # Level 2 Get shape functions and weights
@@ -2309,8 +2509,8 @@ def computeL1TprimeTerms_Part2(
     )
     _L2Tp = multiply(Nm @ L2Tp_new[idxm], jnp.matmul(Nm, L2rhocp[idxm]).mean(axis=0))
     _2 = multiply(
-        multiply(-Shapes[0][0], _L2Tp.T[:, :, newax]),
-        (1 / dt) * wqm[newax, newax, :],
+        multiply(-Shapes[0][0], _L2Tp.T[:, :, None]),
+        (1 / dt) * wqm[None, None, :],
     ).sum(axis=2)
 
     Vcu += Shapes[1][2] @ _1.reshape(-1) + Shapes[0][2] @ _2.reshape(-1)
@@ -2354,8 +2554,8 @@ def computeL2TprimeTerms_Part2(Levels, ne_nn, L3Tp, L3Tp0, L3rhocp, dt, Shapes, 
     _L3Tp = multiply(Nf @ L3Tp_new[idxf], jnp.matmul(Nf, L3rhocp[idxf]).mean(axis=0))
 
     _data2 = multiply(
-        multiply(-Shapes[2][0], _L3Tp.T[:, :, newax]),
-        (1 / dt) * wqf[newax, newax, :],
+        multiply(-Shapes[2][0], _L3Tp.T[:, :, None]),
+        (1 / dt) * wqf[None, None, :],
     ).sum(axis=2)
 
     L2V += Shapes[2][2] @ _data2.reshape(-1)
