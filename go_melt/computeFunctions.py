@@ -331,62 +331,94 @@ def SetupProperties(prop_obj):
 
 
 def SetupNonmesh(nonmesh_input):
+    """
+    Initialize and return a dictionary of non-mesh simulation parameters.
+
+    Parameters:
+    nonmesh_input (dict): Dictionary containing time-stepping, output,
+                          and laser path configuration.
+
+    Returns:
+    dict: A dictionary of structured non-mesh parameters.
+    """
     Nonmesh = dict2obj(nonmesh_input)
-    ### User-defined parameters (START) ###
-    # Timestep (for finest mesh)
+
+    # Timestep for finest mesh (s)
     Nonmesh.timestep_L3 = nonmesh_input.get("timestep_L3", 1e-5)
-    # Subcycle numbers
+
+    # Subcycle numbers (unitless)
     Nonmesh.subcycle_num_L2 = nonmesh_input.get("subcycle_num_L2", 1)
     Nonmesh.subcycle_num_L3 = nonmesh_input.get("subcycle_num_L3", 1)
-    # Dwell time timestep (explicit)
+
+    # Dwell time duration (s)
     Nonmesh.dwell_time = nonmesh_input.get("dwell_time", 0.1)
 
-    # How frequently (factor) to record coarse-domain
+    # Coarse-domain recording frequency (steps)
     Nonmesh.Level1_record_step = nonmesh_input.get("Level1_record_step", 1)
-    # Where to save
+
+    # Output directory
     Nonmesh.save_path = nonmesh_input.get("save_path", "results/")
-    # Where to save
-    Nonmesh.npz_folder = nonmesh_input.get("npz_folder", "npz_folder/")
-    # Flag to save vtk/vtr files
-    Nonmesh.output_files = nonmesh_input.get("output_files", 1)
-    # Flag to save timing results
-    Nonmesh.savetime = nonmesh_input.get("savetime", 0)
-    # Flag to save valid results
-    Nonmesh.savevalid = nonmesh_input.get("savevalid", 0)
-    # Location of toolpath file
+
+    # Output flags
+    Nonmesh.output_files = nonmesh_input.get("output_files", 1)  # Save VTK/VTR
+
+    # Toolpath file location
     Nonmesh.toolpath = nonmesh_input.get("toolpath", "laserPath.txt")
-    # Number of timesteps to wait before larger dt in dwell time
+
+    # Wait time before increasing timestep in dwell (steps)
     Nonmesh.wait_time = nonmesh_input.get("wait_time", 500.0)
-    # Load layer
+
+    # Layer control
     Nonmesh.layer_num = nonmesh_input.get("layer_num", 0)
-    # Output info
+    Nonmesh.restart_layer_num = nonmesh_input.get("restart_layer_num", 10000)
+
+    # Output verbosity
     Nonmesh.info_T = nonmesh_input.get("info_T", 0)
+
     # Laser velocity (mm/s)
     Nonmesh.laser_velocity = nonmesh_input.get("laser_velocity", 500)
-    # How long to wait after each track finishes before moving on
+
+    # Wait time after each track (s)
     Nonmesh.wait_track = nonmesh_input.get("wait_track", 0.0)
 
-    # How frequently to record and/or check to move the fine domain
+    # Recording frequency (steps)
     Nonmesh.record_step = nonmesh_input.get(
         "record_step", Nonmesh.subcycle_num_L2 * Nonmesh.subcycle_num_L3
     )
+
+    # G-code file path
     Nonmesh.gcode = nonmesh_input.get(
         "gcode", "./examples/gcodefiles/defaultName.gcode"
     )
-    Nonmesh.dwell_time_multiplier = nonmesh_input.get("dwell_time_multiplier", 1)
-    Nonmesh.use_txt = nonmesh_input.get("use_txt", 0)
-    # How long to wait after each track finishes before moving on
-    Nonmesh.restart_layer_num = nonmesh_input.get("restart_layer_num", 10000)
 
+    # Dwell time multiplier (unitless)
+    Nonmesh.dwell_time_multiplier = nonmesh_input.get("dwell_time_multiplier", 1)
+
+    # Use TXT format for toolpath (flag)
+    Nonmesh.use_txt = nonmesh_input.get("use_txt", 0)
+
+    # Create output directory if it doesn't exist
     if not os.path.exists(Nonmesh.save_path):
         os.makedirs(Nonmesh.save_path)
 
-    ### User-defined parameters (END) ###
-    Nonmesh_dict = structure_to_dict(Nonmesh)
-    return Nonmesh_dict
+    return structure_to_dict(Nonmesh)
 
 
 def structure_to_dict(struct):
+    """
+    Recursively convert a nested object with attributes into a dictionary.
+
+    This function handles nested objects by checking if each attribute
+    has a __dict__ (i.e., is an object) and recursively converting it,
+    unless the object has a 'tolist' method (e.g., NumPy or JAX arrays),
+    in which case it is left as-is.
+
+    Parameters:
+    struct (object): An object with attributes to convert.
+
+    Returns:
+    dict: A dictionary representation of the object's attributes.
+    """
     return {
         k: (
             v
@@ -398,7 +430,22 @@ def structure_to_dict(struct):
 
 
 def getStaticNodesAndElements(L):
-    # L is Levels
+    """
+    Extract static element and node counts from a list of level dictionaries.
+
+    Parameters:
+    L (list): A list of level dictionaries (e.g., from SetupLevels),
+              where each dictionary contains 'ne' (number of elements)
+              and 'nn' (number of nodes) as JAX arrays.
+
+    Returns:
+    tuple: A tuple containing:
+        - L[2]["ne"] as int
+        - L[3]["ne"] as int
+        - L[1]["nn"] as int
+        - L[2]["nn"] as int
+        - L[3]["nn"] as int
+    """
     return (
         L[2]["ne"].tolist(),
         L[3]["ne"].tolist(),
@@ -409,7 +456,21 @@ def getStaticNodesAndElements(L):
 
 
 def getStaticSubcycle(N):
-    # N is Nonmesh
+    """
+    Extract and compute subcycle values from the non-mesh configuration.
+
+    Parameters:
+    N (dict): Dictionary containing subcycle numbers for Level 2 and Level 3.
+
+    Returns:
+    tuple: A tuple containing:
+        - N2 (int): Subcycle count for Level 2
+        - N3 (int): Subcycle count for Level 3
+        - N23 (int): Total subcycles (N2 * N3)
+        - fN2 (float): N2 as float
+        - fN3 (float): N3 as float
+        - fN23 (float): N23 as float
+    """
     N2, N3 = N["subcycle_num_L2"], N["subcycle_num_L3"]
     N23 = N2 * N3
     fN2, fN3, fN23 = float(N2), float(N3), float(N23)
@@ -417,60 +478,122 @@ def getStaticSubcycle(N):
 
 
 def calcStaticTmpNodesAndElements(L, v):
-    # L is Levels
+    """
+    Calculate temporary element and node counts in Level 1 up to a given z-value.
+
+    Parameters:
+    L (list): List of level dictionaries (e.g., from SetupLevels).
+    v (list or array): A 3D coordinate [x, y, z] used to filter nodes by z-value.
+
+    Returns:
+    tuple:
+        tmp_ne (int): Estimated number of elements below or at z = v[2].
+        tmp_nn (int): Estimated number of nodes below or at z = v[2].
+    """
+    # Mask for nodes in Level 1 where z <= v[2] + tolerance
     Level1_mask = L[1]["node_coords"][2] <= v[2] + 1e-5
     Level1_nn = sum(Level1_mask)
+
+    # Calculate temporary number of elements and nodes
     tmp_ne = L[1]["elements"][0] * L[1]["elements"][1] * (Level1_nn - 1)
     tmp_ne = tmp_ne.tolist()
     tmp_nn = (L[1]["nodes"][0] * L[1]["nodes"][1] * Level1_nn).tolist()
+
     return (tmp_ne, tmp_nn)
 
 
 def getBCindices(x):
+    """
+    Compute boundary condition indices for a structured 3D mesh.
+
+    Parameters:
+    x (object): An object with attributes:
+        - nodes (list of int): Number of nodes in x, y, z directions.
+        - nn (int): Total number of nodes.
+
+    Returns:
+    list of jnp.ndarray: A list containing indices for:
+        [west, east, south, north, bottom, top] boundaries.
+    """
     nx, ny, nz = x.nodes[0], x.nodes[1], x.nodes[2]
     nn = x.nn
 
+    # Bottom face (z = 0)
     bidx = jnp.arange(0, nx * ny)
+
+    # Top face (z = nz - 1)
     tidx = jnp.arange(nx * ny * (nz - 1), nn)
+
+    # West face (x = 0)
     widx = jnp.arange(0, nn, nx)
+
+    # East face (x = nx - 1)
     eidx = jnp.arange(nx - 1, nn, nx)
+
+    # South face (y = 0)
     sidx = jnp.arange(0, nx)[:, newax] + (nx * ny * jnp.arange(0, nz))[newax, :]
     sidx = sidx.reshape(-1)
+
+    # North face (y = ny - 1)
     nidx = (
         jnp.arange(nx * (ny - 1), nx * ny)[:, newax]
         + (nx * ny * jnp.arange(0, nz))[newax, :]
     )
     nidx = nidx.reshape(-1)
+
     return [widx, eidx, sidx, nidx, bidx, tidx]
 
 
 def getSubstrateNodes(Levels):
+    """
+    Calculate the number of substrate nodes (z ≤ 0) for Levels 1 to 3.
+
+    Parameters:
+    Levels (list): A list of level dictionaries, each containing:
+        - "node_coords": list of arrays for x, y, z coordinates.
+        - "nodes": list of node counts in x, y, z directions.
+
+    Returns:
+    tuple: A tuple of substrate node counts for Levels 0 to 3,
+           where Level 0 is always 0.
+    """
     substrate = [
         ((L["node_coords"][2] < 1e-5).sum() * L["nodes"][0] * L["nodes"][1]).tolist()
-        for L in Levels[1:5]
+        for L in Levels[1:4]
     ]
     return (0, *substrate)
 
 
 @partial(jax.jit, static_argnames=["ne", "nn"])
 def solveMatrixFreeFE(Level, nn, ne, k, rhocp, dt, T, Fc, Corr):
-    """solveMatrixFreeFE computes the thermal solve for the explicit timestep.
-    :param Level: Mesh level
-    :param nn, ne: number of nodes, number of elements
-    :param dt: timestep
-    :param T: previous temperature for mesh
-    :param Fc: integrated RHS values (including heat source)
-    :param Corr: integrated correction terms
-    :return (newT + Fc + Corr) / newM
-    :return newT: Temperture for next timestep
     """
+    Perform an explicit matrix-free finite element thermal solve.
 
-    nen = jnp.size(Level["connect"][0], 1)
-    ndim = 3
+    This function computes the temperature update for a single timestep
+    using a matrix-free approach, avoiding global matrix assembly.
+
+    Parameters:
+    Level (dict): Mesh level containing connectivity and geometry.
+    nn (int): Total number of nodes.
+    ne (int): Total number of elements.
+    k (array): Thermal conductivity at each node.
+    rhocp (array): Volumetric density times heat capacity at each node.
+    dt (float): Time step size.
+    T (array): Temperature at the previous timestep.
+    Fc (array): Integrated right-hand side (e.g., heat source + surface BC).
+    Corr (array): Integrated T' correction terms.
+
+    Returns:
+    array: Updated temperature field for the next timestep.
+    """
+    nen = jnp.size(Level["connect"][0], 1)  # Nodes per element
+    ndim = 3  # 3D problem
 
     coords = getSampleCoords(Level)
     N, dNdx, wq = computeQuad3dFemShapeFunctions_jax(coords)
-    wq = wq[0][0]
+    wq = wq[0][0]  # Quadrature weight
+
+    # Precompute shape function matrices
     NTN = jnp.matmul(N.T, N)
     BTB = jnp.zeros((nen, nen))
     for idim in range(ndim):
@@ -484,49 +607,67 @@ def solveMatrixFreeFE(Level, nn, ne, k, rhocp, dt, T, Fc, Corr):
             Level["nodes"][0],
             Level["nodes"][1],
         )
-        kvec = (k[idx]).mean()
-        mvec = (rhocp[idx]).mean() / dt
+        kvec = k[idx].mean()
+        mvec = rhocp[idx].mean() / dt
 
-        Me = jnp.sum(NTN * wq * mvec, 0)
+        Me = jnp.sum(NTN * wq * mvec, axis=0)
         Ke = BTB * kvec * wq
         LHSe = jnp.diag(Me) - Ke
 
         return jnp.matmul(LHSe, T[idx]), Me, idx
 
+    # Vectorized element-wise computation
     vcalcVal = jax.vmap(calcVal)
     aT, aMe, aidx = vcalcVal(jnp.arange(ne))
+
+    # Assemble global temperature and mass contributions
     newT = jnp.bincount(aidx.reshape(-1), aT.reshape(-1), length=nn)
     newM = jnp.bincount(aidx.reshape(-1), aMe.reshape(-1), length=nn)
+
     return (newT + Fc + Corr) / newM
 
 
 @jax.jit
 def convert2XYZ(i, ne_x, ne_y, nn_x, nn_y):
-    """convert2XYZ computes the indices for each node w.r.t. each axis.
-    It also computes the connectivity matrix in terms of global indices.
-    :param i: element id
-    :param ne_x, ne_y: number of elements in x and y directions
-    :param nn_x, nn_y: number of nodes in x and y directions
-    :return ix, iy, iz, idx
-    :return ix, iy, iz: Node id in either x, y, or z axis
-    :return idx: connectivity vector of global node ids
     """
+    Compute local element indices and global node connectivity in 3D.
 
-    iz, _ = jnp.divmod(i, (ne_x) * (ne_y))
-    iy, _ = jnp.divmod(i, ne_x)
-    iy -= iz * ne_y
-    ix = jnp.mod(i, ne_x)
+    Parameters:
+    i (int): Element index (flattened).
+    ne_x (int): Number of elements in the x-direction.
+    ne_y (int): Number of elements in the y-direction.
+    nn_x (int): Number of nodes in the x-direction.
+    nn_y (int): Number of nodes in the y-direction.
+
+    Returns:
+    tuple:
+        ix (int): Element index in x-direction.
+        iy (int): Element index in y-direction.
+        iz (int): Element index in z-direction.
+        idx (jnp.ndarray): Global node indices for the 8-node hexahedral element.
+    """
+    ne_xy = ne_x * ne_y
+    nn_xy = nn_x * nn_y
+
+    iz = i // ne_xy
+    iy = (i // ne_x) - iz * ne_y
+    ix = i % ne_x
+
+    base = ix + iy * nn_x + iz * nn_xy
+    dx = 1
+    dy = nn_x
+    dz = nn_xy
 
     idx = jnp.array(
         [
-            ix + iy * (nn_x) + iz * (nn_x * nn_y),
-            (ix + 1) + iy * (nn_x) + iz * (nn_x * nn_y),
-            (ix + 1) + (iy + 1) * (nn_x) + iz * (nn_x * nn_y),
-            ix + (iy + 1) * (nn_x) + iz * (nn_x * nn_y),
-            ix + iy * (nn_x) + (iz + 1) * (nn_x * nn_y),
-            (ix + 1) + iy * (nn_x) + (iz + 1) * (nn_x * nn_y),
-            (ix + 1) + (iy + 1) * (nn_x) + (iz + 1) * (nn_x * nn_y),
-            ix + (iy + 1) * (nn_x) + (iz + 1) * (nn_x * nn_y),
+            base,
+            base + dx,
+            base + dx + dy,
+            base + dy,
+            base + dz,
+            base + dx + dz,
+            base + dx + dy + dz,
+            base + dy + dz,
         ]
     )
 
@@ -535,112 +676,185 @@ def convert2XYZ(i, ne_x, ne_y, nn_x, nn_y):
 
 @jax.jit
 def computeQuad3dFemShapeFunctions_jax(coords):
-    """def computeQuad3dFemShapeFunctions_jax calculates the 3D shape functions
-    and shape function derivatives for a given element when integrating using
-    Gaussian quadrature. The quadrature weights are also returned.
-    :param coords: nodal coordinates of element
-    :return N, dNdx, wq
-    :return N: shape function
-    :return dNdx: derivative of shape function (3D)
-    :return wq: quadrature weights for each of the eight quadrature points
     """
+    Compute shape functions, their derivatives, and quadrature weights
+    for an 8-node hexahedral element using 3D Gaussian quadrature.
 
-    ngp = 8  # Total number of quadrature points
-    ndim = 3  # Total number of spatial dimensions
+    This function evaluates the shape function matrix (N), its spatial
+    derivatives (dNdx), and the quadrature weights (wq) at 8 integration
+    points in the reference element.
 
-    # Define isoparametric coordinates in 3D space
+    Parameters:
+    coords (array): Nodal coordinates of the hexahedral element, shape (8, 3).
+
+    Returns:
+    N (array): Shape function values at each quadrature point, shape (8, 8).
+    dNdx (array): Derivatives of shape functions w.r.t. global coordinates,
+                  shape (8, 8, 3).
+    wq (array): Quadrature weights for each integration point, shape (8, 1).
+    """
+    ngp = 8  # Number of Gauss points
+    ndim = 3  # Number of spatial dimensions
+
+    # Isoparametric coordinates for 8-node hexahedral element
     ksi_i = jnp.array([-1, 1, 1, -1, -1, 1, 1, -1])
     eta_i = jnp.array([-1, -1, 1, 1, -1, -1, 1, 1])
     zeta_i = jnp.array([-1, -1, -1, -1, 1, 1, 1, 1])
 
-    # Define quadrature coordinates
+    # Gauss points in reference space (±1/√3)
     ksi_q = (1 / jnp.sqrt(3)) * ksi_i
     eta_q = (1 / jnp.sqrt(3)) * eta_i
     zeta_q = (1 / jnp.sqrt(3)) * zeta_i
 
-    # Preallocate quadrature weights
+    # Uniform quadrature weights for 2-point Gauss rule
     tmp_wq = jnp.ones(ngp)
 
-    # Calculate shape function and derivative of shape function for quadrature points
-    _ksi = 1 + ksi_q[:, newax] @ ksi_i[newax, :]
-    _eta = 1 + eta_q[:, newax] @ eta_i[newax, :]
-    _zeta = 1 + zeta_q[:, newax] @ zeta_i[newax, :]
-    N = (1 / 8) * (_ksi) * (_eta) * (_zeta)
-    dNdksi = (1 / 8) * ksi_i[newax, :] * (_eta) * (_zeta)
-    dNdeta = (1 / 8) * eta_i[newax, :] * (_ksi) * (_zeta)
-    dNdzeta = (1 / 8) * zeta_i[newax, :] * (_ksi) * (_eta)
+    # Evaluate shape functions at Gauss points
+    _ksi = 1 + ksi_q[:, None] @ ksi_i[None, :]
+    _eta = 1 + eta_q[:, None] @ eta_i[None, :]
+    _zeta = 1 + zeta_q[:, None] @ zeta_i[None, :]
+    N = (1 / 8) * _ksi * _eta * _zeta
+    # Derivatives w.r.t. reference coordinates
+    dNdksi = (1 / 8) * ksi_i[None, :] * _eta * _zeta
+    dNdeta = (1 / 8) * eta_i[None, :] * _ksi * _zeta
+    dNdzeta = (1 / 8) * zeta_i[None, :] * _ksi * _eta
 
-    # Find derivative of parent coordinates w.r.t. isoparametric space
+    # Compute Jacobian components (diagonal for structured mesh)
     dxdksi = jnp.matmul(dNdksi, coords[:, 0])
     dydeta = jnp.matmul(dNdeta, coords[:, 1])
     dzdzeta = jnp.matmul(dNdzeta, coords[:, 2])
 
-    # Find Jacobian matrices and calculate quadrature weights and dNdx
-    J = jnp.array([[dxdksi[0], 0, 0], [0, dydeta[0], 0], [0, 0, dzdzeta[0]]])
-    Jinv = jnp.array(
-        [[1 / dxdksi[0], 0, 0], [0, 1 / dydeta[0], 0], [0, 0, 1 / dzdzeta[0]]]
+    # Manually construct Jacobian and its inverse
+    J = jnp.array(
+        [
+            [dxdksi[0], 0.0, 0.0],
+            [0.0, dydeta[0], 0.0],
+            [0.0, 0.0, dzdzeta[0]],
+        ]
     )
-    dNdx = jnp.zeros([ngp, ngp, ndim])
-    wq = jnp.zeros([ngp, 1])
+    Jinv = jnp.array(
+        [
+            [1.0 / dxdksi[0], 0.0, 0.0],
+            [0.0, 1.0 / dydeta[0], 0.0],
+            [0.0, 0.0, 1.0 / dzdzeta[0]],
+        ]
+    )
+
+    # Allocate arrays for shape function derivatives and weights
+    dNdx = jnp.zeros((ngp, ngp, ndim))
+    wq = jnp.zeros((ngp, 1))
+
+    # Loop over Gauss points to compute global derivatives and weights
     for q in range(ngp):
-        dNdx = dNdx.at[q, :, :].set(
-            jnp.concatenate(
-                [dNdksi[q, :, newax], dNdeta[q, :, newax], dNdzeta[q, :, newax]], axis=1
-            )
-            @ Jinv
+        dN_dxi = jnp.concatenate(
+            [
+                dNdksi[q, :, None],
+                dNdeta[q, :, None],
+                dNdzeta[q, :, None],
+            ],
+            axis=1,
         )
+        dNdx = dNdx.at[q, :, :].set(dN_dxi @ Jinv)
         wq = wq.at[q].set(jnp.linalg.det(J) * tmp_wq[q])
+
     return jnp.array(N), jnp.array(dNdx), jnp.array(wq)
 
 
 @jax.jit
 def computeQuad2dFemShapeFunctions_jax(coords):
-    """def computeQuad2dFemShapeFunctions_jax calculates the 2D shape functions
-    and shape function derivatives for a given element when integrating using
-    Gaussian quadrature. The quadrature weights are also returned.
-    :param coords: nodal coordinates of element
-    :return N, dNdx, wq
-    :return N: shape function
-    :return dNdx: derivative of shape function (2D)
-    :return wq: quadrature weights for each of the four quadrature points
     """
-    ngp = 4  # Total number of quadrature points
-    ndim = 2  # Total number of dimensions
+    Compute shape functions, their derivatives, and quadrature weights
+    for a 4-node quadrilateral element using 2D Gaussian quadrature.
 
-    # Define isoparametric coordinates in 3D space
+    This function evaluates the shape function matrix (N), its spatial
+    derivatives (dNdx), and the quadrature weights (wq) at 4 integration
+    points in the reference element.
+
+    Parameters:
+    coords (array): Nodal coordinates of the quadrilateral element, shape (8, 2). Only
+                    the last 4 coordinates (top surface of element) are used.
+
+    Returns:
+    N (array): Shape function values at each quadrature point, shape (4, 4).
+    dNdx (array): Derivatives of shape functions w.r.t. global coordinates,
+                  shape (4, 4, 2).
+    wq (array): Quadrature weights for each integration point, shape (4, 1).
+    """
+    ngp = 4  # Number of Gauss points
+    ndim = 2  # Number of spatial dimensions
+
+    # Isoparametric coordinates for 4-node quadrilateral element
     ksi_i = jnp.array([-1, 1, 1, -1])
     eta_i = jnp.array([-1, -1, 1, 1])
 
-    # Define quadrature coordinates
+    # Gauss points in reference space (±1/√3)
     ksi_q = (1 / jnp.sqrt(3)) * ksi_i
     eta_q = (1 / jnp.sqrt(3)) * eta_i
 
-    # Preallocate quadrature weights
+    # Uniform quadrature weights for 2-point Gauss rule
     tmp_wq = jnp.ones(ngp)
 
-    # Calculate using local coordinate system
-    _ksi = 1 + ksi_q[:, newax] @ ksi_i[newax, :]
-    _eta = 1 + eta_q[:, newax] @ eta_i[newax, :]
+    # Evaluate shape functions at Gauss points
+    _ksi = 1 + ksi_q[:, None] @ ksi_i[None, :]
+    _eta = 1 + eta_q[:, None] @ eta_i[None, :]
     N = (1 / 4) * _ksi * _eta
-    dNdksi = (1 / 4) * ksi_i[newax, :] * _eta
-    dNdeta = (1 / 4) * eta_i[newax, :] * _ksi
 
+    # Derivatives w.r.t. reference coordinates
+    dNdksi = (1 / 4) * ksi_i[None, :] * _eta
+    dNdeta = (1 / 4) * eta_i[None, :] * _ksi
+
+    # Compute Jacobian components (diagonal for structured mesh)
     dxdksi = jnp.matmul(dNdksi, coords[4:, 0])
     dydeta = jnp.matmul(dNdeta, coords[4:, 1])
 
-    J = jnp.array([[dxdksi[0], 0], [0, dydeta[0]]])
-    Jinv = jnp.array([[1 / dxdksi[0], 0], [0, 1 / dydeta[0]]])
-    dNdx = jnp.zeros([ngp, ngp, ndim])
-    wq = jnp.zeros([ngp, 1])
+    # Manually construct Jacobian and its inverse
+    J = jnp.array(
+        [
+            [dxdksi[0], 0.0],
+            [0.0, dydeta[0]],
+        ]
+    )
+    Jinv = jnp.array(
+        [
+            [1.0 / dxdksi[0], 0.0],
+            [0.0, 1.0 / dydeta[0]],
+        ]
+    )
+
+    # Allocate arrays for shape function derivatives and weights
+    dNdx = jnp.zeros((ngp, ngp, ndim))
+    wq = jnp.zeros((ngp, 1))
+
+    # Loop over Gauss points to compute global derivatives and weights
     for q in range(ngp):
-        dNdx = dNdx.at[q, :, :].set(
-            jnp.concatenate([dNdksi[q, :, newax], dNdeta[q, :, newax]], axis=1) @ Jinv
+        dN_dxi = jnp.concatenate(
+            [
+                dNdksi[q, :, None],
+                dNdeta[q, :, None],
+            ],
+            axis=1,
         )
+        dNdx = dNdx.at[q, :, :].set(dN_dxi @ Jinv)
         wq = wq.at[q].set(jnp.linalg.det(J) * tmp_wq[q])
+
     return jnp.array(N), jnp.array(dNdx), jnp.array(wq)
 
 
 def getCoarseNodesInFineRegion(xnf, xnc):
+    """
+    Identify coarse grid nodes that overlap with the fine grid region.
+
+    This function determines which coarse grid nodes fall within the
+    spatial extent of a given fine grid. It assumes uniform spacing
+    in the coarse grid.
+
+    Parameters:
+    xnf (array): Coordinates of the fine grid nodes.
+    xnc (array): Coordinates of the coarse grid nodes.
+
+    Returns:
+    array: Indices of coarse grid nodes that overlap with the fine grid.
+    """
     xfmin = xnf.min()
     xfmax = xnf.max()
     xcmin = xnc.min()
@@ -649,14 +863,31 @@ def getCoarseNodesInFineRegion(xnf, xnc):
     nnc = xnc.size
     nec = nnc - 1
     hc = (xcmax - xcmin) / nec
+
     overlapMin = jnp.round((xfmin - xcmin) / hc)
     overlapMax = jnp.round((xfmax - xcmin) / hc) + 1
+
     overlap = jnp.arange(overlapMin, overlapMax).astype(int)
 
     return overlap
 
 
 def getCoarseNodesInLargeFineRegion(xnc, xnf):
+    """
+    Identify fine grid indices that correspond to coarse grid nodes
+    when the fine grid spans a larger domain than the coarse grid.
+
+    This function computes the indices of fine grid nodes that align
+    with the coarse grid node positions, assuming both grids are
+    uniformly spaced.
+
+    Parameters:
+    xnc (array): Coordinates of the coarse grid nodes.
+    xnf (array): Coordinates of the fine grid nodes.
+
+    Returns:
+    array: Indices of fine grid nodes that align with coarse grid nodes.
+    """
     xfmin = xnf.min()
     xfmax = xnf.max()
     xcmin = xnc.min()
@@ -672,33 +903,47 @@ def getCoarseNodesInLargeFineRegion(xnc, xnf):
 
     overlapMin = jnp.round((xcmin - xfmin) / hf)
     overlapMax = jnp.round((xcmax - xfmin) / hf) + 1
-    overlap = jnp.arange(overlapMin, overlapMax, int(jnp.round(hc / hf))).astype(int)
+
+    step = int(jnp.round(hc / hf))
+    overlap = jnp.arange(overlapMin, overlapMax, step).astype(int)
 
     return overlap
 
 
 @partial(jax.jit, static_argnames=["ne_nn"])
 def computeSources(Level, v, Shapes, ne_nn, properties, laserP):
-    """computeSources computes the integrated source term for all three levels using
-    the mesh from Level 3.
-    :param Levels: multilevel container
-    :param v: current position of laser (from reading file)
-    :param Shapes[1]: shape/node between Level 3 and Level 1 (symmetric)
-    :param Shapes[2]: shape/node between Level 3 and Level 2 (symmetric)
-    :param ne_nn: total number of elements/nodes (active and deactive)
-    :param properties: material/laser properties
-    :param laserP: laser power
-    :return Fc, Fm, Ff
-    :return Fc: integrated source term for Levels[1]
-    :return Fm: integrated source term for Levels[2]
-    :return Ff: integrated source term for Levels[3]
     """
-    # Get shape functions and weights
+    Compute integrated source terms for all three levels using Level 3 mesh.
+
+    This function evaluates the laser-induced heat source at quadrature
+    points of the fine mesh (Level 3), integrates it using shape functions,
+    and projects the result to coarser levels using precomputed transfer
+    operators.
+
+    Parameters:
+    Level (dict): Mesh level containing connectivity and geometry for Level 3.
+    v (array): Current laser position.
+    Shapes (list): Shape transfer operators between Level 3 and Levels 1 & 2.
+                   Shapes[1][0]: L3 → L1 interpolation matrix.
+                   Shapes[2][0]: L3 → L2 interpolation matrix.
+                   Shapes[1][2], Shapes[2][2]: Projection matrices.
+    ne_nn (tuple): Element/node counts for each level.
+                   ne_nn[1]: Number of elements in Level 3.
+                   ne_nn[4]: Number of nodes in Level 3.
+    properties (dict): Material and laser properties.
+    laserP (float): Laser power.
+
+    Returns:
+    Fc (array): Integrated source term for Level 1.
+    Fm (array): Integrated source term for Level 2.
+    Ff (array): Integrated source term for Level 3.
+    """
+    # Get shape functions and quadrature weights for Level 3 elements
     coords = getSampleCoords(Level)
     Nf, _, wqf = computeQuad3dFemShapeFunctions_jax(coords)
 
     def stepcomputeCoarseSource(ieltf):
-        # Get the nodal indices for that element
+        # Get nodal indices for the fine element
         ix, iy, iz, idx = convert2XYZ(
             ieltf,
             Level["elements"][0],
@@ -706,44 +951,58 @@ def computeSources(Level, v, Shapes, ne_nn, properties, laserP):
             Level["nodes"][0],
             Level["nodes"][1],
         )
-        # Get nodal coordinates for the fine element
+        # Evaluate coordinates at quadrature points
         x, y, z = getQuadratureCoords(Level, ix, iy, iz, Nf)
-        # Compute the source at the quadrature point location
+        # Evaluate source function at quadrature points
         Q = computeSourceFunction_jax(x, y, z, v, properties, laserP)
+        # Return raw source, integrated source, and node indices
         return Q * wqf, Nf @ Q * wqf, idx
 
+    # Vectorized computation over all Level 3 elements
     vstepcomputeCoarseSource = jax.vmap(stepcomputeCoarseSource)
-
-    # Returns data for Shapes[1][0]/Shapes[2][0], data premultiplied by Nf, and nodes for Level 3
     _data, _data3, nodes3 = vstepcomputeCoarseSource(jnp.arange(ne_nn[1]))
 
-    # This will be equivalent to a transverse matrix operation for each fine element
+    # Project source terms to Levels 1 and 2 using transfer operators
     _data1 = multiply(Shapes[1][0], _data).sum(axis=1)
     _data2 = multiply(Shapes[2][0], _data).sum(axis=1)
+
     Fc = Shapes[1][2] @ _data1.reshape(-1)
     Fm = Shapes[2][2] @ _data2.reshape(-1)
     Ff = bincount(nodes3.reshape(-1), _data3.reshape(-1), ne_nn[4])
+
     return Fc, Fm, Ff
 
 
 @jax.jit
 def computeSourceFunction_jax(x, y, z, v, properties, P):
-    """computeSourceFunction_jax computes a 3D Gaussian term.
-    :param x, y, z: nodal coordinates
-    :param v: laser center
-    :param properties
-    :param P: laser power
-    :param properties["laser_eta"]: laser emissivity
-    :return F: output of source equation
     """
-    # Precompute some constants
+    Compute a 3D Gaussian heat source term for laser-material interaction.
+
+    This function evaluates a separable Gaussian distribution in x, y, and z
+    directions centered at the laser position `v`, scaled by laser power and
+    material properties.
+
+    Parameters:
+    x, y, z (array): Coordinates of quadrature points.
+    v (array): Laser center position [vx, vy, vz].
+    properties (dict): Material and laser properties.
+                       Required keys:
+                       - "laser_eta": laser absorption efficiency.
+                       - "laser_radius": standard deviation in x/y.
+                       - "laser_depth": standard deviation in z.
+    P (float): Laser power.
+
+    Returns:
+    array: Evaluated source term at each quadrature point.
+    """
+    # Precompute constants
     _pcoeff = 6 * jnp.sqrt(3) * P * properties["laser_eta"]
     _rcoeff = 1 / (properties["laser_radius"] * jnp.sqrt(jnp.pi))
     _dcoeff = 1 / (properties["laser_depth"] * jnp.sqrt(jnp.pi))
     _rsq = properties["laser_radius"] ** 2
     _dsq = properties["laser_depth"] ** 2
 
-    # Assume each source is independent, multiply afterwards
+    # Evaluate separable Gaussian in each direction
     Qx = _rcoeff * jnp.exp(-3 * (x - v[0]) ** 2 / _rsq)
     Qy = _rcoeff * jnp.exp(-3 * (y - v[1]) ** 2 / _rsq)
     Qz = _dcoeff * jnp.exp(-3 * (z - v[2]) ** 2 / _dsq)
@@ -753,16 +1012,21 @@ def computeSourceFunction_jax(x, y, z, v, properties, P):
 
 @jax.jit
 def interpolatePointsMatrix(Level, node_coords_new):
-    """interpolatePointsMatrix computes shape functions and node indices
-    to interpolate solutions located on Level["node_coords"] and connected with
-    Level["connect"] to new coordinates node_coords_new. This function outputs
-    shape functions for interpolation that is between levels
-    :param Level["node_coords"]: source nodal coordinates
-    :param Level["connect"]: connectivity matrix
-    :param node_coords_new: output nodal coordinates
-    :return _Nc, _node
-    :return _Nc: shape function connecting source to output
-    :return _node: coarse node indices
+    """
+    Compute interpolation shape functions and node indices for mapping
+    values from a coarse mesh to a new set of coordinates.
+
+    Parameters:
+    Level (dict): Contains mesh information:
+                  - "node_coords": list of 1D arrays for x, y, z coordinates.
+                  - "connect": list of connectivity arrays in x, y, z.
+    node_coords_new (list): New nodal coordinates [x_new, y_new, z_new],
+                            each as a 2D array.
+
+    Returns:
+    list: [_Nc, _node]
+          _Nc (array): Shape function values for interpolation.
+          _node (array): Indices of coarse nodes contributing to each point.
     """
     ne_x = Level["connect"][0].shape[0]
     ne_y = Level["connect"][1].shape[0]
@@ -772,75 +1036,59 @@ def interpolatePointsMatrix(Level, node_coords_new):
     nn_xn = len(node_coords_new[0])
     nn_yn = len(node_coords_new[1])
     nn_zn = len(node_coords_new[2])
-    tmp_ne_nn = nn_xn * nn_yn * nn_zn
+    total_points = nn_xn * nn_yn * nn_zn
+
     h_x = Level["node_coords"][0][1] - Level["node_coords"][0][0]
     h_y = Level["node_coords"][1][1] - Level["node_coords"][1][0]
     h_z = Level["node_coords"][2][1] - Level["node_coords"][2][0]
 
     def stepInterpolatePoints(ielt):
-        # Get nodal indices
-        izn, _ = jnp.divmod(ielt, (nn_xn) * (nn_yn))
-        iyn, _ = jnp.divmod(ielt, nn_xn)
-        iyn -= izn * nn_yn
-        ixn = jnp.mod(ielt, nn_xn)
+        izn, rem = jnp.divmod(ielt, nn_xn * nn_yn)
+        iyn, ixn = jnp.divmod(rem, nn_xn)
 
-        _x = node_coords_new[0][ixn, newax]
-        _y = node_coords_new[1][iyn, newax]
-        _z = node_coords_new[2][izn, newax]
+        _x = node_coords_new[0][ixn]
+        _y = node_coords_new[1][iyn]
+        _z = node_coords_new[2][izn]
 
-        x_comp = (ne_x - 1) * jnp.ones_like(_x)
-        y_comp = (ne_y - 1) * jnp.ones_like(_y)
-        z_comp = (ne_z - 1) * jnp.ones_like(_z)
+        # Determine coarse element indices
+        ielt_x = jnp.clip(
+            jnp.floor((_x - Level["node_coords"][0][0]) / h_x).astype(int), 0, ne_x - 1
+        )
+        ielt_y = jnp.clip(
+            jnp.floor((_y - Level["node_coords"][1][0]) / h_y).astype(int), 0, ne_y - 1
+        )
+        ielt_z = jnp.clip(
+            jnp.floor((_z - Level["node_coords"][2][0]) / h_z).astype(int), 0, ne_z - 1
+        )
 
-        x_comp2 = jnp.zeros_like(_x)
-        y_comp2 = jnp.zeros_like(_y)
-        z_comp2 = jnp.zeros_like(_z)
-
-        # Figure out which coarse element we are in
-        _floorx = jnp.floor((_x - Level["node_coords"][0][0]) / h_x)
-        _conx = jnp.concatenate((_floorx, x_comp))
-        _ielt_x = jnp.min(_conx)
-        _conx = jnp.concatenate((_ielt_x[newax], x_comp2))
-        ielt_x = jnp.max(_conx).T.astype(int)
-
-        _floory = jnp.floor((_y - Level["node_coords"][1][0]) / h_y)
-        _cony = jnp.concatenate((_floory, y_comp))
-        _ielt_y = jnp.min(_cony)
-        _cony = jnp.concatenate((_ielt_y[newax], y_comp2))
-        ielt_y = jnp.max(_cony).T.astype(int)
-
-        _floorz = jnp.floor((_z - Level["node_coords"][2][0]) / h_z)
-        _conz = jnp.concatenate((_floorz, z_comp))
-        _ielt_z = jnp.min(_conz).T.astype(int)
-        _conz = jnp.concatenate((_ielt_z[newax], z_comp2))
-        ielt_z = jnp.max(_conz).T.astype(int)
-
+        # Get node indices
         nodex = Level["connect"][0][ielt_x, :]
         nodey = Level["connect"][1][ielt_y, :]
         nodez = Level["connect"][2][ielt_z, :]
         node = nodex + nodey * nn_x + nodez * (nn_x * nn_y)
 
+        # Get coordinates of the coarse element nodes
         xx = Level["node_coords"][0][nodex]
         yy = Level["node_coords"][1][nodey]
         zz = Level["node_coords"][2][nodez]
 
+        # Bounding box corners
         xc0, xc1 = xx[0], xx[1]
         yc0, yc3 = yy[0], yy[3]
         zc0, zc5 = zz[0], zz[5]
 
-        # Evaluate shape functions associated with coarse nodes
-        Nc = jnp.concatenate(
-            compute3DN(
-                [_x, _y, _z], [xc0, xc1], [yc0, yc3], [zc0, zc5], [h_x, h_y, h_z]
-            )
+        # Compute shape functions
+        Nc = compute3DN(
+            [_x, _y, _z], [xc0, xc1], [yc0, yc3], [zc0, zc5], [h_x, h_y, h_z]
         )
-        # The where makes it zero outside the interpolation range
-        Nc = ((Nc >= -1e-2).all() & (Nc <= 1 + 1e-2).all()) * Nc
-        Nc = jnp.clip(Nc, 0.0, 1.0)
+
+        # Clip and mask invalid values
+        valid = jnp.logical_and((Nc >= -1e-2).all(), (Nc <= 1 + 1e-2).all())
+        Nc = jax.lax.select(valid, jnp.clip(Nc, 0.0, 1.0), jnp.zeros_like(Nc))
+
         return Nc, node
 
-    vstepInterpolatePoints = jax.vmap(stepInterpolatePoints)
-    _Nc, _node = vstepInterpolatePoints(jnp.arange(tmp_ne_nn))
+    _Nc, _node = jax.vmap(stepInterpolatePoints)(jnp.arange(total_points))
     return [_Nc, _node]
 
 
