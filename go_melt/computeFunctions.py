@@ -1830,26 +1830,89 @@ def update_overlap_nodes_coords_L2(Level, vcon, element_size, ele_ratio):
 
 @partial(jax.jit, static_argnames=["_idx", "_val"])
 def substitute_Tbar(Tbar, _idx, _val):
+    """
+    Replace a slice of the Tbar array starting at a given index with a new value.
+
+    This function sets all elements from index `_idx` to the end of the array
+    to the value `_val`. The index and value are treated as static arguments
+    for JAX compilation efficiency.
+
+    Parameters:
+    Tbar (array): Input array to be modified.
+    _idx (int): Starting index for substitution.
+    _val (float or array): Value(s) to assign from _idx onward.
+
+    Returns:
+    array: Modified Tbar array with values substituted from _idx onward.
+    """
     return Tbar.at[_idx:].set(_val)
 
 
 @jax.jit
 def substitute_Tbar2(Tbar, _idx, _val):
+    """
+    Replace a single element in the Tbar array at a given index.
+
+    This function sets the element at index `_idx` to `_val`.
+
+    Parameters:
+    Tbar (array): Input array to be modified.
+    _idx (int): Index of the element to be replaced.
+    _val (float): New value to assign at the specified index.
+
+    Returns:
+    array: Modified Tbar array with the specified element updated.
+    """
     return Tbar.at[_idx].set(_val)
 
 
 def find_max_const(CoarseLevel, FinerLevel):
-    # Used to find the maximum number of elements the finer level domain can move
-    iE = CoarseLevel.bounds.x[1] - FinerLevel.bounds.x[1]  # Number of elements to east
-    iN = CoarseLevel.bounds.y[1] - FinerLevel.bounds.y[1]  # Number of elements to north
-    iT = CoarseLevel.bounds.z[1] - FinerLevel.bounds.z[1]  # Number of elements to top
-    iW = CoarseLevel.bounds.x[0] - FinerLevel.bounds.x[0]  # Number of elements to west
-    iS = CoarseLevel.bounds.y[0] - FinerLevel.bounds.y[0]  # Number of elements to south
-    iB = CoarseLevel.bounds.z[0] - FinerLevel.bounds.z[0]  # Number of elements to bot
+    """
+    Compute the maximum number of elements the finer level domain can move
+    within the bounds of the coarser level domain in each direction.
+
+    This function calculates how many elements the finer mesh can shift
+    in the positive and negative directions (east/west, north/south, top/bottom)
+    without exceeding the bounds of the coarser mesh.
+
+    Parameters:
+    CoarseLevel (object): Object with `bounds` attribute containing:
+                          - bounds.x, bounds.y, bounds.z: tuples (min, max)
+    FinerLevel (object): Object with `bounds` attribute structured similarly.
+
+    Returns:
+    tuple: Three lists representing allowable movement in:
+           - x-direction: [west, east]
+           - y-direction: [south, north]
+           - z-direction: [bottom, top]
+    """
+    iE = CoarseLevel.bounds.x[1] - FinerLevel.bounds.x[1]  # Elements to east
+    iN = CoarseLevel.bounds.y[1] - FinerLevel.bounds.y[1]  # Elements to north
+    iT = CoarseLevel.bounds.z[1] - FinerLevel.bounds.z[1]  # Elements to top
+    iW = CoarseLevel.bounds.x[0] - FinerLevel.bounds.x[0]  # Elements to west
+    iS = CoarseLevel.bounds.y[0] - FinerLevel.bounds.y[0]  # Elements to south
+    iB = CoarseLevel.bounds.z[0] - FinerLevel.bounds.z[0]  # Elements to bottom
+
     return [iW, iE], [iS, iN], [iB, iT]
 
 
 def calc_length_h(A):
+    """
+    Compute domain lengths and element sizes in each spatial direction.
+
+    This function calculates the physical length of the domain and the
+    corresponding element size (grid spacing) in the x, y, and z directions.
+
+    Parameters:
+    A (object): Mesh object with attributes:
+                - bounds.x, bounds.y, bounds.z: tuples (min, max)
+                - elements: tuple (nx, ny, nz) representing number of elements
+
+    Returns:
+    tuple:
+        - [Lx, Ly, Lz]: Physical domain lengths in x, y, z directions.
+        - [hx, hy, hz]: Element sizes in x, y, z directions.
+    """
     # Domain length
     Lx = A.bounds.x[1] - A.bounds.x[0]
     Ly = A.bounds.y[1] - A.bounds.y[0]
@@ -1858,76 +1921,120 @@ def calc_length_h(A):
     hx = Lx / A.elements[0]
     hy = Ly / A.elements[1]
     hz = Lz / A.elements[2]
+
     return [Lx, Ly, Lz], [hx, hy, hz]
 
 
 def saveResult(Level, save_str, record_lab, save_path, zoffset):
-    """saveResult saves a vtk for the current level's temperature field
-    :param Level: structure of Level
-    :param save_str: prefix of save string
-    :param record_lab: recording label that is incremented after each save
-    :param save_path: folder where file is saved
-    :param zoffset: used for rendering purposes, no effect on model itself
+    """
+    Save the temperature and state fields of a mesh level to a VTK file.
+
+    This function exports the structured grid data for visualization,
+    including temperature and material state fields, using the VTK format.
+
+    Parameters:
+    Level (dict): Dictionary containing mesh and field data:
+                  - "node_coords": [x, y, z] coordinate arrays
+                  - "T0": temperature field (flattened)
+                  - "S1": state field (flattened)
+                  - "nodes": [nx, ny, nz] number of nodes in each direction
+    save_str (str): Prefix for the output filename.
+    record_lab (int): Frame or timestep label for file naming.
+    save_path (str): Directory path to save the output file.
+    zoffset (float): Offset applied to z-coordinates for rendering purposes.
+
+    Returns:
+    None
     """
     # List coordinates in each direction for structured save
     vtkcx = np.array(Level["node_coords"][0])
     vtkcy = np.array(Level["node_coords"][1])
     vtkcz = np.array(Level["node_coords"][2] - zoffset)
-    # Reshape the temperature field for correct rendering later
+
+    # Reshape the temperature and state fields for correct rendering
     vtkT = np.array(
         Level["T0"].reshape(Level["nodes"][2], Level["nodes"][1], Level["nodes"][0])
     ).transpose((2, 1, 0))
     vtkS = np.array(
         Level["S1"].reshape(Level["nodes"][2], Level["nodes"][1], Level["nodes"][0])
     ).transpose((2, 1, 0))
-    # Save a vtr
+
+    # Save a VTK rectilinear grid file
     pointData = {"Temperature (K)": vtkT, "State (Powder/Solid)": vtkS}
     vtkSave = f"{save_path}{save_str}{record_lab:08}"
     gridToVTK(vtkSave, vtkcx, vtkcy, vtkcz, pointData=pointData)
 
 
 def saveFinalResult(Level, save_str, save_path, zoffset):
-    """saveResult saves a vtk for the current level's temperature field
-    :param Level: structure of Level
-    :param save_str: prefix of save string
-    :param record_lab: recording label that is incremented after each save
-    :param save_path: folder where file is saved
-    :param zoffset: used for rendering purposes, no effect on model itself
+    """
+    Save the final temperature and state fields of a mesh level to a VTK file.
+
+    This function exports the final structured grid data for visualization,
+    including temperature and material state fields, using the VTK format.
+
+    Parameters:
+    Level (dict): Dictionary containing mesh and field data:
+                  - "node_coords": [x, y, z] coordinate arrays
+                  - "T0": temperature field (flattened)
+                  - "S1": state field (flattened)
+                  - "nodes": [nx, ny, nz] number of nodes in each direction
+    save_str (str): Prefix for the output filename.
+    save_path (str): Directory path to save the output file.
+    zoffset (float): Offset applied to z-coordinates for rendering purposes.
+
+    Returns:
+    None
     """
     # List coordinates in each direction for structured save
     vtkcx = np.array(Level["node_coords"][0])
     vtkcy = np.array(Level["node_coords"][1])
     vtkcz = np.array(Level["node_coords"][2] - zoffset)
-    # Reshape the temperature field for correct rendering later
+
+    # Reshape the temperature and state fields for correct rendering
     vtkT = np.array(
         Level["T0"].reshape(Level["nodes"][2], Level["nodes"][1], Level["nodes"][0])
     ).transpose((2, 1, 0))
     vtkS = np.array(
         Level["S1"].reshape(Level["nodes"][2], Level["nodes"][1], Level["nodes"][0])
     ).transpose((2, 1, 0))
-    # Save a vtr
+
+    # Save a VTK rectilinear grid file
     pointData = {"Temperature (K)": vtkT, "State (Powder/Solid)": vtkS}
     vtkSave = f"{save_path}{save_str}Final"
     gridToVTK(vtkSave, vtkcx, vtkcy, vtkcz, pointData=pointData)
 
 
 def saveState(Level, save_str, record_lab, save_path, zoffset):
-    """saveResult saves a vtk for the current level's temperature field
-    :param Level: structure of Level
-    :param save_str: prefix of save string
-    :param record_lab: recording label that is incremented after each save
-    :param save_path: folder where file is saved
-    :param zoffset: used for rendering purposes, no effect on model itself
+    """
+    Save the current state field of a mesh level to a VTK file.
+
+    This function exports the structured grid data for visualization,
+    including only the material state field (e.g., powder or solid).
+
+    Parameters:
+    Level (dict): Dictionary containing mesh and field data:
+                  - "node_coords": [x, y, z] coordinate arrays
+                  - "S1": state field (flattened)
+                  - "nodes": [nx, ny, nz] number of nodes in each direction
+    save_str (str): Prefix for the output filename.
+    record_lab (int): Frame or timestep label for file naming.
+    save_path (str): Directory path to save the output file.
+    zoffset (float): Offset applied to z-coordinates for rendering purposes.
+
+    Returns:
+    None
     """
     # List coordinates in each direction for structured save
     vtkcx = np.array(Level["node_coords"][0])
     vtkcy = np.array(Level["node_coords"][1])
     vtkcz = np.array(Level["node_coords"][2] - zoffset)
-    # Reshape the temperature field for correct rendering later
+
+    # Reshape the state field for correct rendering
     vtkS = np.array(
         Level["S1"].reshape(Level["nodes"][2], Level["nodes"][1], Level["nodes"][0])
     ).transpose((2, 1, 0))
-    # Save a vtr
+
+    # Save a VTK rectilinear grid file
     pointData = {"State (Powder/Solid)": vtkS}
     vtkSave = f"{save_path}{save_str}{record_lab:08}"
     gridToVTK(vtkSave, vtkcx, vtkcy, vtkcz, pointData=pointData)
@@ -1935,20 +2042,41 @@ def saveState(Level, save_str, record_lab, save_path, zoffset):
 
 @jax.jit
 def getNewTprime(Fine, FineT0, CoarseT, Coarse, C2F):
-    # Fine: Fine Level information
-    # FineT0: Fine Level Temperature
-    # CoarseT: Coarse Level Temperature
-    # Coarse: Coarse Level information
-    # C2F: Coarse-to-Fine matrix/node list
+    """
+    Compute the fine-level temperature residual (T') and update the coarse-level
+    temperature.
 
-    # Find new T
+    This function interpolates the fine-level temperature onto the overlap region,
+    updates the coarse-level temperature at the overlap, and computes the temperature
+    difference (residual) between the fine level and the interpolated coarse level.
+
+    Parameters:
+    Fine (dict): Fine level mesh and metadata, including:
+                 - "overlapCoords": coordinates for interpolation
+                 - "overlapNodes": node indices for overlap region
+    FineT0 (array): Fine level temperature field.
+    CoarseT (array): Coarse level temperature field (to be updated).
+    Coarse (dict): Coarse level mesh and metadata, including:
+                   - "nodes": [nx, ny, nz] node counts
+    C2F (array): Coarse-to-fine interpolation matrix.
+
+    Returns:
+    tuple:
+        - Tprime (array): Fine-level temperature residual.
+        - CoarseT (array): Updated coarse-level temperature field.
+    """
+    # Interpolate fine temperature at overlap coordinates
     _val = interpolatePoints(Fine, FineT0, Fine["overlapCoords"])
+
+    # Get flattened index of overlap region in coarse mesh
     _idx = getOverlapRegion(
         Fine["overlapNodes"], Coarse["nodes"][0], Coarse["nodes"][1]
     )
-    # Directly substitute into T0 to save deepcopy
+
+    # Update coarse temperature at overlap region
     CoarseT = substitute_Tbar2(CoarseT, _idx, _val)
-    # Subtract coarser from finer
+
+    # Compute residual between fine and interpolated coarse temperature
     Tprime = FineT0 - interpolate_w_matrix(C2F, CoarseT)
 
     return Tprime, CoarseT
@@ -1956,8 +2084,34 @@ def getNewTprime(Fine, FineT0, CoarseT, Coarse, C2F):
 
 @jax.jit
 def getBothNewTprimes(Levels, FineT, MesoT, M2F, CoarseT, C2M):
+    """
+    Compute temperature residuals at two nested levels in a multilevel hierarchy.
+
+    This function computes the temperature residuals (T') for both the fine and
+    meso levels by updating and interpolating across the hierarchy:
+    Fine → Meso → Coarse.
+
+    Parameters:
+    Levels (dict): Dictionary of mesh levels:
+                   - Levels[1]: Coarse
+                   - Levels[2]: Meso
+                   - Levels[3]: Fine
+    FineT (array): Fine level temperature field.
+    MesoT (array): Meso level temperature field.
+    M2F (array): Meso-to-fine interpolation matrix.
+    CoarseT (array): Coarse level temperature field.
+    C2M (array): Coarse-to-meso interpolation matrix.
+
+    Returns:
+    tuple:
+        - lTprime (array): Fine-level temperature residual.
+        - mTprime (array): Meso-level temperature residual.
+        - mT0 (array): Updated meso-level temperature field.
+        - uT0 (array): Updated coarse-level temperature field.
+    """
     lTprime, mT0 = getNewTprime(Levels[3], FineT, MesoT, Levels[2], M2F)
     mTprime, uT0 = getNewTprime(Levels[2], mT0, CoarseT, Levels[1], C2M)
+
     return lTprime, mTprime, mT0, uT0
 
 
@@ -1965,6 +2119,39 @@ def getBothNewTprimes(Levels, FineT, MesoT, M2F, CoarseT, C2M):
 def computeSolutions(
     Levels, ne_nn, tmp_ne_nn, LF, L1V, LInterp, Lk, Lrhocp, L2V, dt, properties
 ):
+    """
+    Compute temperature solutions across three mesh levels using a matrix-free FEM solver.
+
+    This function performs a multiscale temperature update by solving the heat equation
+    at coarse, meso, and fine levels. It uses matrix-free finite element methods and
+    interpolates between levels to apply boundary conditions and source terms.
+
+    Parameters:
+    Levels (dict): Dictionary of mesh levels:
+                   - Levels[1]: Coarse
+                   - Levels[2]: Meso
+                   - Levels[3]: Fine
+    ne_nn (list): List of neighbor-element and node-element mappings for each level.
+    tmp_ne_nn (list): Temporary mappings and boundary indices for Level 1.
+    LF (dict): Source terms for each level.
+    L1V (array): Volume weights for Level 1.
+    LInterp (list): Interpolation matrices:
+                    - LInterp[0]: Level 1 → Level 2
+                    - LInterp[1]: Level 2 → Level 3
+    Lk (dict): Thermal conductivity for each level.
+    Lrhocp (dict): Volumetric heat capacity for each level.
+    L2V (array): Volume weights for Level 2.
+    dt (float): Time step size.
+    properties (dict): Material properties, including:
+                       - "T_amb": Ambient temperature for Dirichlet BCs.
+
+    Returns:
+    tuple:
+        - FinalL1 (array): Updated temperature field at Level 1.
+        - FinalL2 (array): Updated temperature field at Level 2.
+        - FinalL3 (array): Updated temperature field at Level 3.
+    """
+    # Solve coarse-level problem (Level 1)
     L1T = solveMatrixFreeFE(
         Levels[1],
         ne_nn[2],
@@ -1979,20 +2166,24 @@ def computeSolutions(
     L1T = substitute_Tbar(L1T, tmp_ne_nn[1], properties["T_amb"])
     FinalL1 = assignBCs(L1T, Levels)
 
-    # Compute source term for medium scale problem using fine mesh
+    # Interpolate Level 1 solution to Level 2 for source term
     TfAll = interpolate_w_matrix(LInterp[0], FinalL1)
-    # Avoids assembling LHS matrix
+
+    # Solve meso-level problem (Level 2)
     L2T = solveMatrixFreeFE(
         Levels[2], ne_nn[3], ne_nn[0], Lk[2], Lrhocp[2], dt, Levels[2]["T0"], LF[2], L2V
     )
     FinalL2 = assignBCsFine(L2T, TfAll, Levels[2]["BC"])
 
-    # Use Levels[2].T to get Dirichlet BCs for fine-scale solution
+    # Interpolate Level 2 solution to Level 3 for boundary conditions
     TfAll = interpolate_w_matrix(LInterp[1], FinalL2)
+
+    # Solve fine-level problem (Level 3)
     FinalL3 = solveMatrixFreeFE(
         Levels[3], ne_nn[4], ne_nn[1], Lk[3], Lrhocp[3], dt, Levels[3]["T0"], LF[3], 0
     )
     FinalL3 = assignBCsFine(FinalL3, TfAll, Levels[3]["BC"])
+
     return FinalL1, FinalL2, FinalL3
 
 

@@ -114,17 +114,14 @@
         "output_files": 1,
         "record_step": 25,
         "Level1_record_step": 1,
-        "savetime": 0,
         "laser_velocity": 1000,
         "save_path": "./results/example/",
         "gcode": "./examples/gcodefiles/example.gcode",
         "toolpath": "./results/example/toolpath.txt",
-        "npz_folder": "./results/example/npz_folder/",
         "layer_num": 0,
         "subcycle_num_L2": 5,
         "subcycle_num_L3": 5,
         "info_T": 1,
-        "training": 0,
         "dwell_time_multiplier": 8,
         "use_txt": 0
     }
