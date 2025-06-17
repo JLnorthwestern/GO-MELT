@@ -1798,8 +1798,8 @@ def update_overlap_nodes_coords_L2(Level, vcon, element_size, ele_ratio):
 
     Parameters:
     Level (dict): Mesh level containing original overlap node indices and coordinates.
-                  - "orig_overlap_nodes_L2": list of original node index arrays [x, y, z].
-                  - "orig_overlap_coors_L2": list of original coordinate arrays [x, y, z].
+                - "orig_overlap_nodes_L2": list of original node index arrays [x, y, z].
+                - "orig_overlap_coors_L2": list of original coordinate arrays [x, y, z].
     vcon (array): Displacement vector [vx, vy, vz].
     element_size (array): Element sizes [hx, hy, hz].
     ele_ratio (array): Ratio of coarse-to-fine elements in each direction.
