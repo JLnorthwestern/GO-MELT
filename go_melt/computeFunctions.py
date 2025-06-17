@@ -18,31 +18,47 @@ import math
 
 
 def calcNumNodes(elements):
+    """
+    Increment each of the three input elements by 1.
+
+    Parameters:
+    elements (list or tuple of int): A sequence of three integers, typically
+    representing node indices or positions.
+
+    Returns:
+    list of int: A list where each element is incremented by 1.
+    """
     return [elements[0] + 1, elements[1] + 1, elements[2] + 1]
 
 
 def createMesh3D(x, y, z):
-    """createMesh3D finds nodal coordinates and mesh
-    connectivity matrices.
-    :param x: list containing (bounds.x[0], bounds.x[1], nodes[0])
-    :param y: list containing (bounds.y[0], bounds.y[1], nodes[1])
-    :param z: list containing (bounds.z[0], bounds.z[1], nodes[2])
-    :return node_coords, connect
-    :return node_coords: list of nodes coordinates along axis (3D)
-    :return connect: list of connectivity matrices along axis (3D)
+    """
+    Generate nodal coordinates and connectivity matrices for a 3D mesh.
+
+    Parameters:
+    x (list): [x_min, x_max, num_nodes_x] — bounds and number of nodes in x.
+    y (list): [y_min, y_max, num_nodes_y] — bounds and number of nodes in y.
+    z (list): [z_min, z_max, num_nodes_z] — bounds and number of nodes in z.
+
+    Returns:
+    tuple:
+        node_coords (list of jnp.ndarray): Coordinates along x, y, and z axes.
+        connect (list of jnp.ndarray): Connectivity matrices for x, y, and z.
     """
     # Node positions in x, y, z
     nx, ny, nz = [jnp.linspace(*axis) for axis in (x, y, z)]
 
-    # Connectivity in x, y, and z
+    # Connectivity in x-direction
     cx0 = jnp.arange(0, x[2] - 1).reshape(-1, 1)
     cx1 = jnp.arange(1, x[2]).reshape(-1, 1)
     nconn_x = jnp.concatenate([cx0, cx1, cx1, cx0, cx0, cx1, cx1, cx0], axis=1)
 
+    # Connectivity in y-direction
     cy0 = jnp.arange(0, y[2] - 1).reshape(-1, 1)
     cy1 = jnp.arange(1, y[2]).reshape(-1, 1)
     nconn_y = jnp.concatenate([cy0, cy0, cy1, cy1, cy0, cy0, cy1, cy1], axis=1)
 
+    # Connectivity in z-direction
     cz0 = jnp.arange(0, z[2] - 1).reshape(-1, 1)
     cz1 = jnp.arange(1, z[2]).reshape(-1, 1)
     nconn_z = jnp.concatenate([cz0, cz0, cz0, cz0, cz1, cz1, cz1, cz1], axis=1)
@@ -50,51 +66,89 @@ def createMesh3D(x, y, z):
     return [nx, ny, nz], [nconn_x, nconn_y, nconn_z]
 
 
-### Parse inputs into multiple objects (START) ###
 class obj:
-    # Constructor
+    """
+    A simple wrapper class to convert a dictionary into an object
+    with attributes accessible via dot notation.
+
+    Attributes are dynamically created from the keys and values
+    of the input dictionary.
+
+    Example:
+        data = {'a': 1, 'b': 2}
+        o = obj(data)
+        print(o.a)  # Outputs: 1
+    """
+
     def __init__(self, dict1):
         self.__dict__.update(dict1)
 
 
 def dict2obj(dict1):
+    """
+    Convert a dictionary into an object with attribute-style access.
+
+    This function serializes the dictionary to JSON and then deserializes
+    it using a custom object hook to create an instance of the `obj` class.
+
+    Parameters:
+    dict1 (dict): The dictionary to convert.
+
+    Returns:
+    obj: An object with attributes corresponding to the dictionary keys.
+    """
     return json.loads(json.dumps(dict1), object_hook=obj)
 
 
 def save_object(obj, filename):
-    with open(filename, "wb") as outp:  # Overwrites any existing file.
+    """
+    Save a Python object to a file using the dill serialization library.
+
+    This function overwrites any existing file with the same name.
+
+    Parameters:
+    obj (any): The Python object to serialize and save.
+    filename (str): The path to the file where the object will be saved.
+    """
+    with open(filename, "wb") as outp:
         dill.dump(obj, outp, dill.HIGHEST_PROTOCOL)
 
 
 def SetupLevels(solver_input, properties):
-    # Coarse domain
-    _ = solver_input.get("Level1", {})
-    Level1 = dict2obj(_)
-    # Finer domain
-    _ = solver_input.get("Level2", {})
-    Level2 = dict2obj(_)
-    # Finest domain
-    _ = solver_input.get("Level3", {})
-    Level3 = dict2obj(_)
+    """
+    Set up multilevel mesh structures and initialize physical fields.
 
-    # Steps to do for all three levels
+    This function constructs four hierarchical mesh levels (Level0-Level3),
+    computes geometric and physical properties, and identifies overlapping
+    regions between levels for multiscale simulations. Level0 is fine-scale
+    top layer. Level 1 is part-scale coarse mesh. Level 2 is meso-scale.
+    Level 3 is fine-scale near the melt pool.
+
+    Parameters:
+    solver_input (dict): Dictionary containing configuration for Level1-Level3.
+    properties (dict): Dictionary of physical and simulation parameters.
+
+    Returns:
+    list: A list of dictionaries representing Level0 to Level3 configurations.
+    """
+
+    # Parse solver input into Level1–Level3 objects
+    Level1 = dict2obj(solver_input.get("Level1", {}))
+    Level2 = dict2obj(solver_input.get("Level2", {}))
+    Level3 = dict2obj(solver_input.get("Level3", {}))
+
+    # Common setup for all three levels
     for level in [Level1, Level2, Level3]:
         level.length, level.h = calc_length_h(level)
-        # Calculate number of nodes in each direction
         level.nodes = calcNumNodes(level.elements)
-        # Calculate total number of nodes (nn) and elements (ne)
         level.ne = level.elements[0] * level.elements[1] * level.elements[2]
         level.nn = level.nodes[0] * level.nodes[1] * level.nodes[2]
-        # Get BC indices
         level.BC = getBCindices(level)
-        # Set up meshes for all three levels
         level.node_coords, level.connect = createMesh3D(
             (level.bounds.x[0], level.bounds.x[1], level.nodes[0]),
             (level.bounds.y[0], level.bounds.y[1], level.nodes[1]),
             (level.bounds.z[0], level.bounds.z[1], level.nodes[2]),
         )
-
-        # Preallocate
         level.T = properties["T_amb"] * jnp.ones(level.nn)
         level.T0 = properties["T_amb"] * jnp.ones(level.nn)
         level.S1 = jnp.zeros(level.nn)
@@ -104,115 +158,83 @@ def SetupLevels(solver_input, properties):
             properties["cp_solid_coeff_a0"] * properties["rho"] * jnp.ones(level.nn)
         )
 
+    # Special storage for Level1
     Level1.S1_storage = jnp.zeros(
         [int(round(Level1.h[2] / properties["layer_height"])), Level1.nn]
     )
 
-    # Steps for sublevels only
+    # Additional setup for Level2 and Level3
     for level in [Level2, Level3]:
-        # Constrain fine mesh based on initial conditions
         (
             level.bounds.ix,
             level.bounds.iy,
             level.bounds.iz,
         ) = find_max_const(Level1, level)
-        # Deep copy initial coordinates for updating mesh position
         level.init_node_coors = copy.deepcopy(level.node_coords)
-
-        # Preallocate
         level.Tprime = jnp.zeros(level.nn)
         level.Tprime0 = copy.deepcopy(level.Tprime)
 
+    # Adjust Level1 z-coordinates to align with Level2
     Level1.orig_node_coords = copy.deepcopy(Level1.node_coords)
-    trying_flag = True
     tmp_coords = copy.deepcopy(Level1.orig_node_coords)
-    while trying_flag:
+    while True:
         if jnp.isclose(tmp_coords[2] - Level2.node_coords[-1][-1], 0, atol=1e-4).any():
-            trying_flag = False
-        else:
-            tmp_coords[2] = tmp_coords[2] + properties["layer_height"]
+            break
+        tmp_coords[2] += properties["layer_height"]
     Level1.node_coords = copy.deepcopy(tmp_coords)
 
-    # Get overlapping nodes in x, y, and z directions (separately)
-    Level2.orig_overlap_nodes = [
-        getCoarseNodesInFineRegion(Level2.node_coords[0], Level1.node_coords[0]),
-        getCoarseNodesInFineRegion(Level2.node_coords[1], Level1.node_coords[1]),
-        getCoarseNodesInFineRegion(Level2.node_coords[2], Level1.node_coords[2]),
-    ]
+    # Overlap regions between levels
+    def get_overlap(level_fine, level_coarse):
+        nodes = [
+            getCoarseNodesInFineRegion(
+                level_fine.node_coords[i], level_coarse.node_coords[i]
+            )
+            for i in range(3)
+        ]
+        coors = [
+            jnp.array([level_coarse.node_coords[i][j] for j in nodes[i]])
+            for i in range(3)
+        ]
+        return nodes, coors
 
-    Level2.orig_overlap_coors = [
-        jnp.array([Level1.node_coords[0][_] for _ in Level2.orig_overlap_nodes[0]]),
-        jnp.array([Level1.node_coords[1][_] for _ in Level2.orig_overlap_nodes[1]]),
-        jnp.array([Level1.node_coords[2][_] for _ in Level2.orig_overlap_nodes[2]]),
-    ]
+    Level2.orig_overlap_nodes, Level2.orig_overlap_coors = get_overlap(Level2, Level1)
+    Level3.orig_overlap_nodes, Level3.orig_overlap_coors = get_overlap(Level3, Level2)
 
-    Level3.orig_overlap_nodes = [
-        getCoarseNodesInFineRegion(Level3.node_coords[0], Level2.node_coords[0]),
-        getCoarseNodesInFineRegion(Level3.node_coords[1], Level2.node_coords[1]),
-        getCoarseNodesInFineRegion(Level3.node_coords[2], Level2.node_coords[2]),
-    ]
-
-    Level3.orig_overlap_coors = [
-        jnp.array([Level2.node_coords[0][_] for _ in Level3.orig_overlap_nodes[0]]),
-        jnp.array([Level2.node_coords[1][_] for _ in Level3.orig_overlap_nodes[1]]),
-        jnp.array([Level2.node_coords[2][_] for _ in Level3.orig_overlap_nodes[2]]),
-    ]
-
-    # Identify coarse nodes inside fine-scale region
     Level2.overlapNodes = copy.deepcopy(Level2.orig_overlap_nodes)
     Level2.overlapCoords = copy.deepcopy(Level2.orig_overlap_coors)
     Level3.overlapNodes = copy.deepcopy(Level3.orig_overlap_nodes)
     Level3.overlapCoords = copy.deepcopy(Level3.orig_overlap_coors)
 
-    # Create Level0 to save high-resolution state information
+    # Create Level0 for high-resolution state tracking
     Level0 = obj({})
     Level0.elements = [
         round(Level1.length[0] / Level3.h[0]),
         round(Level1.length[1] / Level3.h[1]),
         round(Level2.length[2] / Level3.h[2]),
     ]
-
-    # Calculate number of nodes in each direction
     Level0.nodes = calcNumNodes(Level0.elements)
-    # Calculate total number of nodes (nn) and elements (ne)
     Level0.ne = Level0.elements[0] * Level0.elements[1] * Level0.elements[2]
     Level0.nn = Level0.nodes[0] * Level0.nodes[1] * Level0.nodes[2]
-    # Set up meshes for all three levels
     Level0.node_coords, Level0.connect = createMesh3D(
         (Level1.bounds.x[0], Level1.bounds.x[1], Level0.nodes[0]),
         (Level1.bounds.y[0], Level1.bounds.y[1], Level0.nodes[1]),
         (Level2.bounds.z[0], Level2.bounds.z[1], Level0.nodes[2]),
     )
-
     Level0.orig_node_coords = copy.deepcopy(Level0.node_coords)
 
-    Level0.orig_overlap_nodes = [
-        getCoarseNodesInFineRegion(Level3.node_coords[0], Level0.node_coords[0]),
-        getCoarseNodesInFineRegion(Level3.node_coords[1], Level0.node_coords[1]),
-        getCoarseNodesInFineRegion(Level3.node_coords[2], Level0.node_coords[2]),
-    ]
-
-    Level0.orig_overlap_coors = [
-        jnp.array([Level0.node_coords[0][_] for _ in Level0.orig_overlap_nodes[0]]),
-        jnp.array([Level0.node_coords[1][_] for _ in Level0.orig_overlap_nodes[1]]),
-        jnp.array([Level0.node_coords[2][_] for _ in Level0.orig_overlap_nodes[2]]),
-    ]
+    Level0.orig_overlap_nodes, Level0.orig_overlap_coors = get_overlap(Level3, Level0)
 
     Level0.overlapNodes = copy.deepcopy(Level0.orig_overlap_nodes)
     Level0.overlapCoords = copy.deepcopy(Level0.orig_overlap_coors)
 
     Level0.orig_overlap_nodes_L2 = [
-        getCoarseNodesInLargeFineRegion(Level2.node_coords[0], Level0.node_coords[0]),
-        getCoarseNodesInLargeFineRegion(Level2.node_coords[1], Level0.node_coords[1]),
-        getCoarseNodesInLargeFineRegion(Level2.node_coords[2], Level0.node_coords[2]),
+        getCoarseNodesInLargeFineRegion(Level2.node_coords[i], Level0.node_coords[i])
+        for i in range(3)
     ]
-
     Level0.orig_overlap_coors_L2 = [
-        jnp.array([Level0.node_coords[0][_] for _ in Level0.orig_overlap_nodes_L2[0]]),
-        jnp.array([Level0.node_coords[1][_] for _ in Level0.orig_overlap_nodes_L2[1]]),
-        jnp.array([Level0.node_coords[2][_] for _ in Level0.orig_overlap_nodes_L2[2]]),
+        jnp.array([Level0.node_coords[i][j] for j in Level0.orig_overlap_nodes_L2[i]])
+        for i in range(3)
     ]
-
     Level0.overlapNodes_L2 = copy.deepcopy(Level0.orig_overlap_nodes_L2)
     Level0.overlapCoords_L2 = copy.deepcopy(Level0.orig_overlap_coors_L2)
 
@@ -225,23 +247,16 @@ def SetupLevels(solver_input, properties):
 
     Level0.layer_idx_delta = int(round(properties["layer_height"] / Level3.h[2]))
 
-    # To convert it to jax for type comparison later
+    # Convert all numeric fields to jnp arrays
     for level in [Level0, Level1, Level2, Level3]:
-        if hasattr(level, "elements"):
-            level.elements = [jnp.array(level.elements[i]) for i in range(3)]
-        if hasattr(level, "h"):
-            level.h = [jnp.array(level.h[i]) for i in range(3)]
-        if hasattr(level, "length"):
-            level.length = [jnp.array(level.length[i]) for i in range(3)]
-        if hasattr(level, "ne"):
-            level.ne = jnp.array(level.ne)
-        if hasattr(level, "nn"):
-            level.nn = jnp.array(level.nn)
-        if hasattr(level, "nodes"):
-            level.nodes = [jnp.array(level.nodes[i]) for i in range(3)]
-        if hasattr(level, "layer_idx_delta"):
-            level.layer_idx_delta = jnp.array(level.layer_idx_delta)
+        for attr in ["elements", "h", "length", "nodes"]:
+            if hasattr(level, attr):
+                setattr(level, attr, [jnp.array(v) for v in getattr(level, attr)])
+        for attr in ["ne", "nn", "layer_idx_delta"]:
+            if hasattr(level, attr):
+                setattr(level, attr, jnp.array(getattr(level, attr)))
 
+    # Return all levels as dictionaries
     Levels = [
         structure_to_dict(Level0),
         structure_to_dict(Level1),
@@ -252,57 +267,67 @@ def SetupLevels(solver_input, properties):
 
 
 def SetupProperties(prop_obj):
+    """
+    Initialize and return a dictionary of material and simulation properties.
+
+    This function reads user-defined or default values from the input
+    dictionary and assigns them to a structured object for use in
+    simulations.
+
+    Parameters:
+    prop_obj (dict): Dictionary containing material and simulation parameters.
+
+    Returns:
+    dict: A dictionary of structured properties with default fallbacks.
+    """
     properties = dict2obj(prop_obj)
-    # Define the material properties
-    # Conductivity (W/mK), (Temperature-dependence a1 * T + a0)
+
+    # Thermal conductivity (W/m·K), temperature-dependent: a1 * T + a0
     properties.k_powder = prop_obj.get("thermal_conductivity_powder", 0.4)
     properties.k_bulk_coeff_a0 = prop_obj.get("thermal_conductivity_bulk_a0", 4.23)
     properties.k_bulk_coeff_a1 = prop_obj.get("thermal_conductivity_bulk_a1", 0.016)
     properties.k_fluid_coeff_a0 = prop_obj.get("thermal_conductivity_fluid_a0", 29.0)
-    # Heat capacity (J/kgK), (Temperature-dependence a1 * T + a0)
+
+    # Heat capacity (J/kg·K), temperature-dependent: a1 * T + a0
     properties.cp_solid_coeff_a0 = prop_obj.get("heat_capacity_solid_a0", 383.1)
     properties.cp_solid_coeff_a1 = prop_obj.get("heat_capacity_solid_a1", 0.174)
     properties.cp_mushy = prop_obj.get("heat_capacity_mushy", 3235.0)
     properties.cp_fluid = prop_obj.get("heat_capacity_fluid", 769.0)
-    # Density (kg/mm^3)
+
+    # Density (kg/mm³)
     properties.rho = prop_obj.get("density", 8.0e-6)
-    # Laser radius (sigma, mm)
-    properties.laser_r = prop_obj.get("laser_radius", 0.110)
-    # Laser radius (sigma, mm)
-    properties.laser_r_bot = prop_obj.get("laser_radius_bottom", 0.110)
-    # Laser depth (d, mm)
-    properties.laser_d = prop_obj.get("laser_depth", 0.05)
-    # Laser power (P, W)
-    properties.laser_P = prop_obj.get("laser_power", 300.0)
-    # Laser absorptivity (eta, unitless)
-    properties.laser_eta = prop_obj.get("laser_absorptivity", 0.25)
-    # Starting laser center (read from tool path file is default)
-    properties.laser_center = prop_obj.get("laser_center", [])
-    # Ambient Temperature (properties.k)
+
+    # Laser parameters
+    properties.laser_radius = prop_obj.get("laser_radius", 0.110)  # mm
+    properties.laser_depth = prop_obj.get("laser_depth", 0.05)  # mm
+    properties.laser_power = prop_obj.get("laser_power", 300.0)  # W
+    properties.laser_eta = prop_obj.get("laser_absorptivity", 0.25)  # unitless
+    properties.laser_center = prop_obj.get("laser_center", [])  # mm
+
+    # Temperature thresholds (K)
     properties.T_amb = prop_obj.get("T_amb", 353.15)
     properties.T_solidus = prop_obj.get("T_solidus", 1554.0)
     properties.T_liquidus = prop_obj.get("T_liquidus", 1625.0)
     properties.T_boiling = prop_obj.get("T_boiling", 3038.0)
-    # Convection coefficient (properties.h_conv, W/mm^2K)
-    properties.h_conv = prop_obj.get("h_conv", 1.473e-5)
-    # Emissivity (unitless)
-    properties.vareps = prop_obj.get("emissivity", 0.600)
-    # Evaporation coefficient (unitless)
-    properties.evc = prop_obj.get("evaporation_coefficient", 0.82)
-    # Boltzmann's constant (J/properties.k)
-    properties.kb = prop_obj.get("boltzmann_constant", 1.38e-23)
-    # Atomic mass (kg)
-    properties.mA = prop_obj.get("atomic_mass", 7.9485017e-26)
-    # Saturation pressure (Pa)
-    properties.Patm = prop_obj.get("saturation_prussure", 101.0e3)
-    # Latent heat of evaporation (J/kg)
-    properties.Lev = prop_obj.get("latent_heat_evap", 4.22e6)
-    # Layer height (micrometers)
+
+    # Heat transfer and radiation
+    properties.h_conv = prop_obj.get("h_conv", 1.473e-5)  # W/mm²·K
+    properties.vareps = prop_obj.get("emissivity", 0.600)  # unitless
+    properties.evc = prop_obj.get("evaporation_coefficient", 0.82)  # unitless
+
+    # Physical constants
+    properties.kb = prop_obj.get("boltzmann_constant", 1.38e-23)  # J/K
+    properties.mA = prop_obj.get("atomic_mass", 7.9485017e-26)  # kg
+    properties.Patm = prop_obj.get("saturation_prussure", 101.0e3)  # Pa
+    properties.Lev = prop_obj.get("latent_heat_evap", 4.22e6)  # J/kg
+
+    # Layer height (mm)
     properties.layer_height = prop_obj.get("layer_height", 0.04)
+
+    # Stefan–Boltzmann constant (W/m²·K⁴)
     properties.sigma_sb = 5.67e-8
-    ### User-defined parameters (END) ###
-    properties_dict = structure_to_dict(properties)
-    return properties_dict
+
+    return structure_to_dict(properties)
 
 
 def SetupNonmesh(nonmesh_input):
@@ -713,10 +738,10 @@ def computeSourceFunction_jax(x, y, z, v, properties, P):
     """
     # Precompute some constants
     _pcoeff = 6 * jnp.sqrt(3) * P * properties["laser_eta"]
-    _rcoeff = 1 / (properties["laser_r"] * jnp.sqrt(jnp.pi))
-    _dcoeff = 1 / (properties["laser_d"] * jnp.sqrt(jnp.pi))
-    _rsq = properties["laser_r"] ** 2
-    _dsq = properties["laser_d"] ** 2
+    _rcoeff = 1 / (properties["laser_radius"] * jnp.sqrt(jnp.pi))
+    _dcoeff = 1 / (properties["laser_depth"] * jnp.sqrt(jnp.pi))
+    _rsq = properties["laser_radius"] ** 2
+    _dsq = properties["laser_depth"] ** 2
 
     # Assume each source is independent, multiply afterwards
     Qx = _rcoeff * jnp.exp(-3 * (x - v[0]) ** 2 / _rsq)
@@ -1834,46 +1859,6 @@ def computeLevelSource(Levels, ne_nn, laser_position, LevelShape, properties, la
     _data1 = vstepLaserPosition(jnp.arange(lshape)).sum(axis=0) / lshape
 
     return LevelShape[2] @ _data1.reshape(-1)
-
-
-def computeAllSources(Levels, ne_nn, laser_position, Shapes, properties, laserP):
-    # Get shape functions and weights
-    coords = getSampleCoords(Levels[3])
-    Nf, _, wqf = computeQuad3dFemShapeFunctions_jax(coords)
-
-    def stepLaserPosition(ilaser):
-        def stepcomputeCoarseSource(ieltf):
-            # Get the nodal indices for that element
-            ix, iy, iz, idx = convert2XYZ(
-                ieltf,
-                Levels[3]["elements"][0],
-                Levels[3]["elements"][1],
-                Levels[3]["nodes"][0],
-                Levels[3]["nodes"][1],
-            )
-            # Get nodal coordinates for the fine element
-            x, y, z = getQuadratureCoords(Levels[3], ix, iy, iz, Nf)
-            # Compute the source at the quadrature point location
-            Q = computeSourceFunction_jax(
-                x, y, z, laser_position[ilaser], properties, laserP[ilaser]
-            )
-            return Q * wqf, Nf @ Q * wqf, idx
-
-        vstepcomputeCoarseSource = jax.vmap(stepcomputeCoarseSource)
-
-        _data, _data3, nodes3 = vstepcomputeCoarseSource(jnp.arange(ne_nn[1]))
-        _data1tmp = multiply(Shapes[1][0], _data).sum(axis=1)
-        _data2tmp = multiply(Shapes[2][0], _data).sum(axis=1)
-        Fc = Shapes[1][2] @ _data1tmp.reshape(-1)
-        Fm = Shapes[2][2] @ _data2tmp.reshape(-1)
-        Ff = bincount(nodes3.reshape(-1), _data3.reshape(-1), ne_nn[4])
-        return Fc, Fm, Ff
-
-    vstepLaserPosition = jax.vmap(stepLaserPosition)
-    # Find the average heat source value
-    lshape = laser_position.shape[0]
-    Fc, Fm, Ff = vstepLaserPosition(jnp.arange(lshape))
-    return Fc, Fm, Ff
 
 
 @partial(jax.jit, static_argnames=["ne_nn"])
