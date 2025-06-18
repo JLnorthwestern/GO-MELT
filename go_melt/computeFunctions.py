@@ -271,7 +271,8 @@ def SetupProperties(prop_obj):
 
     This function reads user-defined or default values from the input
     dictionary and assigns them to a structured object for use in
-    simulations.
+    simulations. It also computes derived coefficients used in
+    evaporation and heat transfer models.
 
     Parameters:
     prop_obj (dict): Dictionary containing material and simulation parameters.
@@ -281,50 +282,65 @@ def SetupProperties(prop_obj):
     """
     properties = dict2obj(prop_obj)
 
-    # Thermal conductivity (W/m·K), temperature-dependent: a1 * T + a0
+    # --- Thermal conductivity (W/m·K) ---
+    # Powder: constant
     properties.k_powder = prop_obj.get("thermal_conductivity_powder", 0.4)
+    # Bulk: linear temperature dependence (a1 * T + a0)
     properties.k_bulk_coeff_a0 = prop_obj.get("thermal_conductivity_bulk_a0", 4.23)
     properties.k_bulk_coeff_a1 = prop_obj.get("thermal_conductivity_bulk_a1", 0.016)
+    # Fluid: constant
     properties.k_fluid_coeff_a0 = prop_obj.get("thermal_conductivity_fluid_a0", 29.0)
 
-    # Heat capacity (J/kg·K), temperature-dependent: a1 * T + a0
+    # --- Heat capacity (J/kg·K) ---
+    # Solid: linear temperature dependence
     properties.cp_solid_coeff_a0 = prop_obj.get("heat_capacity_solid_a0", 383.1)
     properties.cp_solid_coeff_a1 = prop_obj.get("heat_capacity_solid_a1", 0.174)
+    # Mushy and fluid phases: constant
     properties.cp_mushy = prop_obj.get("heat_capacity_mushy", 3235.0)
     properties.cp_fluid = prop_obj.get("heat_capacity_fluid", 769.0)
 
-    # Density (kg/mm³)
+    # --- Density (kg/mm³) ---
     properties.rho = prop_obj.get("density", 8.0e-6)
 
-    # Laser parameters
+    # --- Laser parameters ---
     properties.laser_radius = prop_obj.get("laser_radius", 0.110)  # mm
     properties.laser_depth = prop_obj.get("laser_depth", 0.05)  # mm
     properties.laser_power = prop_obj.get("laser_power", 300.0)  # W
     properties.laser_eta = prop_obj.get("laser_absorptivity", 0.25)  # unitless
     properties.laser_center = prop_obj.get("laser_center", [])  # mm
 
-    # Temperature thresholds (K)
+    # --- Temperature thresholds (K) ---
     properties.T_amb = prop_obj.get("T_amb", 353.15)
     properties.T_solidus = prop_obj.get("T_solidus", 1554.0)
     properties.T_liquidus = prop_obj.get("T_liquidus", 1625.0)
     properties.T_boiling = prop_obj.get("T_boiling", 3038.0)
 
-    # Heat transfer and radiation
+    # --- Heat transfer and radiation ---
     properties.h_conv = prop_obj.get("h_conv", 1.473e-5)  # W/mm²·K
     properties.vareps = prop_obj.get("emissivity", 0.600)  # unitless
     properties.evc = prop_obj.get("evaporation_coefficient", 0.82)  # unitless
 
-    # Physical constants
+    # --- Physical constants ---
     properties.kb = prop_obj.get("boltzmann_constant", 1.38e-23)  # J/K
     properties.mA = prop_obj.get("atomic_mass", 7.9485017e-26)  # kg
-    properties.Patm = prop_obj.get("saturation_prussure", 101.0e3)  # Pa
     properties.Lev = prop_obj.get("latent_heat_evap", 4.22e6)  # J/kg
+    properties.molar_mass = prop_obj.get("molar_mass", 58.69) * 1e-3  # g/mol → kg/mol
 
-    # Layer height (mm)
+    # --- Layer height (mm) ---
     properties.layer_height = prop_obj.get("layer_height", 0.04)
 
-    # Stefan–Boltzmann constant (W/m²·K⁴)
-    properties.sigma_sb = 5.67e-8
+    # --- Universal constants ---
+    properties.sigma_sb = 5.67e-8  # Stefan–Boltzmann constant (W/m²·K⁴)
+    properties.gas_const = 8.314  # Molar gas constant (J/mol·K)
+    properties.atmospheric_pressure = 101325  # Pa
+
+    # --- Derived evaporation model coefficients ---
+    # CM_coeff: Heat loss temperature factor (K·s²/m²)
+    properties.CM_coeff = properties.molar_mass / (2.0 * jnp.pi * properties.gas_const)
+    # CT_coeff: Recoil pressure temperature factor (K)
+    properties.CT_coeff = properties.Lev * properties.molar_mass / properties.gas_const
+    # CP_coeff: Recoil pressure factor (Pa)
+    properties.CP_coeff = 0.54 * properties.atmospheric_pressure
 
     return structure_to_dict(properties)
 
@@ -2189,49 +2205,98 @@ def computeSolutions(
 
 @partial(jax.jit, static_argnames=["ne", "nn"])
 def computeConvRadBC(Level, LevelT0, ne, nn, properties, F):
-    h_conv = properties["h_conv"] / 1e6  # convert to W/mm^2K
-    sigma_sb = properties["sigma_sb"] / 1e6  # convert to W/mm^2/K^4
+    """
+    Compute Neumann boundary conditions on the top surface due to:
+      • Convection (Newton's law of cooling)
+      • Radiation (Stefan-Boltzmann law)
+      • Evaporation (empirical model)
 
+    The resulting heat flux is integrated using 2D quadrature and added
+    to the global force vector.
+
+    Parameters:
+    Level (dict): Mesh data with:
+                  - "node_coords": [x, y] coordinate arrays
+                  - "connect": [cx, cy] element connectivity arrays
+    LevelT0 (array): Temperature field at current time step.
+    ne (int): Total number of elements.
+    nn (int): Total number of nodes.
+    properties (dict): Material and physical constants, including:
+                       - h_conv, sigma_sb, T_amb, T_boiling, evc, Lev,
+                         cp_fluid, vareps, CM_coeff, CT_coeff, CP_coeff
+    F (array): Global force vector to be updated.
+
+    Returns:
+    array: Updated force vector with top-surface Neumann BCs applied.
+    """
+    # Extract physical constants
+    T_amb = properties["T_amb"]
+    T_boiling = properties["T_boiling"]
+    vareps = properties["vareps"]
+    evc = properties["evc"]
+    Lev = properties["Lev"]
+    cp_fluid = properties["cp_fluid"]
+    h_conv = properties["h_conv"]
+    sigma_sb = properties["sigma_sb"]
+
+    # Evaporation model coefficients (precomputed in SetupProperties)
+    invT_b = 1.0 / T_boiling
+    CM_coeff = properties["CM_coeff"]
+    CT_coeff = properties["CT_coeff"]
+    CP_coeff = properties["CP_coeff"]
+
+    # Mesh geometry
     x, y = Level["node_coords"][0], Level["node_coords"][1]
     cx, cy = Level["connect"][0], Level["connect"][1]
-
     ne_x = jnp.size(cx, 0)
     ne_y = jnp.size(cy, 0)
     top_ne = ne - ne_x * ne_y
+    nn_x, nn_y = ne_x + 1, ne_y + 1
 
-    nn_x = ne_x + 1
-    nn_y = ne_y + 1
+    # Coordinates of a representative top-surface element
+    coords = jnp.stack([x[cx[0, :]], y[cy[0, :]]], axis=1)
 
-    coords_x = x[cx[0, :]].reshape(-1, 1)
-    coords_y = y[cy[0, :]].reshape(-1, 1)
-
-    coords = jnp.concatenate([coords_x, coords_y], axis=1)
-    N, dNdx, wq = computeQuad2dFemShapeFunctions_jax(coords)
+    # Precompute shape functions and quadrature weights
+    N, _, wq = computeQuad2dFemShapeFunctions_jax(coords)
 
     def calcCR(i):
-        ix, iy, iz, idx = convert2XYZ(i, ne_x, ne_y, nn_x, nn_y)
-        iT = jnp.matmul(N, LevelT0[idx[4:]])
-        iT = jnp.minimum(iT, properties["T_boiling"] + 1000)
-        S = (
-            1e-6
-            * properties["evc"]
-            * 54.0e3
-            * jnp.exp(-50000 * ((1 / iT) - (1 / properties["T_boiling"])))
-            * jnp.sqrt(0.001 / iT)
-            * (properties["Lev"] + properties["cp_fluid"] * (iT - properties["T_amb"]))
-        )
-        iT = (
-            h_conv * (properties["T_amb"] - iT)
-            + sigma_sb * properties["vareps"] * (properties["T_amb"] ** 4 - iT**4)
-            - S
-        )
-        return jnp.matmul(N.T, multiply(iT, wq.reshape(-1))), idx[4:]
+        """
+        Compute the integrated heat flux vector for a single top-surface element.
+        """
+        _, _, _, idx = convert2XYZ(i, ne_x, ne_y, nn_x, nn_y)
 
-    vcalcCR = jax.vmap(calcCR)
-    aT, aidx = vcalcCR(jnp.arange(top_ne, ne))
+        # Interpolate nodal temperatures to quadrature points
+        Tq = jnp.matmul(N, LevelT0[idx[4:]])
+        Tq = jnp.minimum(Tq, T_boiling + 1000)
+
+        invT = 1.0 / Tq
+
+        # Energy required for phase change and heating of vapor
+        # Includes latent heat and sensible heat from ambient to surface temperature
+        E_pv = Lev + cp_fluid * (Tq - T_amb)  # J/kg
+
+        # Molecular motion term from kinetic theory
+        # Proportional to sqrt(m / (2πRT)), affects evaporation rate
+        MolMot = jnp.sqrt(CM_coeff * invT)  # s/m
+
+        # Evaporative heat loss (W/m²)
+        S = evc * CP_coeff * jnp.exp(-CT_coeff * (invT - invT_b)) * MolMot * E_pv
+
+        # Total heat flux (positive into the domain)
+        q_flux = h_conv * (T_amb - Tq) + sigma_sb * vareps * (T_amb**4 - Tq**4) - S
+
+        # Convert from W/m² to W/mm²
+        q_flux *= 1e-6
+
+        # Integrate over the element
+        return jnp.matmul(N.T, q_flux * wq.reshape(-1)), idx[4:]
+
+    # Vectorized computation over all top-surface elements
+    aT, aidx = jax.vmap(calcCR)(jnp.arange(top_ne, ne))
+
+    # Assemble into global force vector
     NeumannBC = jnp.bincount(aidx.reshape(-1), aT.reshape(-1), length=nn)
 
-    # Returns properties["k"] grad(T) integral, which is Neumann BC (expect ambient < body)
     return F + NeumannBC
 
 

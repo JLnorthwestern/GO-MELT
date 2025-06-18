@@ -103,7 +103,6 @@
         "evaporation_coefficient": 0.82,
         "boltzmann_constant": 1.38e-23,
         "atomic_mass": 9.746e-26,
-        "saturation_prussure": 101000.0,
         "latent_heat_evap": 6457000.0,
         "layer_height": 0.04
     },
