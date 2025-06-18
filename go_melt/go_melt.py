@@ -14,111 +14,118 @@ import json
 
 
 def go_melt(solver_input: dict):
-    # Start timestamp for total time elapsed for simulation
-    tstart = time.time()
+    """
+    Main GO-MELT simulation driver. This function initializes the simulation,
+    sets up all levels, properties, and toolpath data, and prepares for time stepping.
+    Thermal solves using the GO-MELT algorithm are then used.
+    """
+    tstart = time.time()  # Start timer
 
-    # Name of levels (L1: Level 1, L2: Level 2, L3: Level 3)
     level_names = ["L1", "L2", "L3"]
 
-    # Set up dictionaries for properties, multilevel information, and nonmesh info
+    # -------------------------------
+    # Setup: Properties, Mesh, Nonmesh
+    # -------------------------------
     Properties = SetupProperties(solver_input.get("properties", {}))
     Levels = SetupLevels(solver_input, Properties)
     Nonmesh = SetupNonmesh(solver_input.get("nonmesh", {}))
 
-    # Get total number of elements, nodes, and subcycles for static variable execution
+    # -------------------------------
+    # Static Mesh Metadata
+    # -------------------------------
     ne_nn = getStaticNodesAndElements(Levels)
     subcycle = getStaticSubcycle(Nonmesh)
 
-    # Determine ratio between Levels 1 and 2 for mesh movement calculations
+    # -------------------------------
+    # Mesh Ratios for Movement Logic
+    # -------------------------------
     L1L2Eratio = [
-        (jnp.round(Levels[1]["h"][0] / Levels[2]["h"][0])).astype(int),
-        (jnp.round(Levels[1]["h"][1] / Levels[2]["h"][1])).astype(int),
-        (jnp.round(Properties["layer_height"] / Levels[2]["h"][2])).astype(int),
-    ]
-    # Determine ratio between Levels 1 and 2 for mesh movement calculations
+        int(jnp.round(Levels[1]["h"][i] / Levels[2]["h"][i])) for i in range(2)
+    ] + [int(jnp.round(Properties["layer_height"] / Levels[2]["h"][2]))]
+
     L2L3Eratio = [
-        (jnp.round(Levels[2]["h"][0] / Levels[3]["h"][0])).astype(int),
-        (jnp.round(Levels[2]["h"][1] / Levels[3]["h"][1])).astype(int),
-        (jnp.round(Levels[2]["h"][2] / Levels[3]["h"][2])).astype(int),
+        int(jnp.round(Levels[2]["h"][i] / Levels[3]["h"][i])) for i in range(3)
     ]
 
-    # Create the tool path and pre-determine when to move the mesh
+    # -------------------------------
+    # Toolpath Parsing
+    # -------------------------------
     if Nonmesh["use_txt"]:
         move_mesh = count_lines(Nonmesh["toolpath"])
     else:
         move_mesh = parsingGcode(Nonmesh, Properties, Levels[2]["h"])
-    # For monitoring purposes, calculate the total number of time steps in this path
-    total_t_inc = move_mesh
 
-    # Find initial position of laser
+    total_t_inc = move_mesh  # Total time steps
 
-    if len(Properties["laser_center"]) == 0:
+    # -------------------------------
+    # Initial Laser Position
+    # -------------------------------
+    if not Properties["laser_center"]:
         with open(Nonmesh["toolpath"], "r") as tool_path_file:
-            _ = tool_path_file.readline()
-            laser_start = np.array([float(_i) for _i in _.split(",")])
+            laser_start = np.array(
+                [float(val) for val in tool_path_file.readline().split(",")]
+            )
     else:
         laser_start = np.array(Properties["laser_center"])
 
-    # Set up interpolation [matrices, nodes] for initial move
+    # -------------------------------
+    # Interpolation Matrices
+    # -------------------------------
     L1L2Interp = interpolatePointsMatrix(Levels[1], Levels[2]["node_coords"])
     L2L3Interp = interpolatePointsMatrix(Levels[2], Levels[3]["node_coords"])
     LInterp = [L1L2Interp, L2L3Interp]
 
-    # Initialize time counter, record counter, wait counter, and real-time elapsed
-    time_inc, record_inc, wait_inc, t_output = 0, 0, 0, 0.0
-
-    # Save initial condition for all three levels
+    # -------------------------------
+    # Time & Output Initialization
+    # -------------------------------
+    time_inc = record_inc = wait_inc = 0
+    t_output = 0.0
     savenum = int(time_inc / Nonmesh["record_step"]) + 1
     saveResults(Levels, Nonmesh, savenum)
 
-    # Initialize z coordinate for laser position comparison to identify layer change
+    # -------------------------------
+    # Layer Tracking & Accumulation
+    # -------------------------------
     laser_prev_z = float("inf")
-    troubleshoot = 0
     _dwell_time_count = 0
     record_accum = True
 
     if record_accum:
         accum_time = jnp.zeros(Levels[0]["nn"])
-        # This is where the resets go
         max_accum_time = jnp.zeros(Levels[0]["nn"])
 
-    # Track total distance moved from laser center (used for moving mesh)
-    move_hist = [jnp.array(0), jnp.array(0), jnp.array(0)]
+    move_hist = [jnp.array(0), jnp.array(0), jnp.array(0)]  # Laser movement history
 
-    # Initialize flags for moving meshes, calculating substrate, and saving checkpoint
-    force_move, move_vert, new_checkpoint = False, False, False
+    # -------------------------------
+    # Simulation Flags
+    # -------------------------------
+    force_move = move_vert = new_checkpoint = False
+    ongoing_simulation = single_step = True
 
-    # Open laser tool path file
+    # -------------------------------
+    # Toolpath File & Checkpointing
+    # -------------------------------
     tool_path_file = open(Nonmesh["toolpath"], "r")
-
-    # Set up boolean flags for running simulation and using single-time stepping
-    ongoing_simulation, single_step = True, True
-
-    # Define checkpoint folder
     np_path = Path(Nonmesh["save_path"] + "checkpoint").absolute()
-
     layer_check = Nonmesh["layer_num"] + Nonmesh["restart_layer_num"]
-    # If specified in input folder, load checkpoint based on layer number
+
+    # -------------------------------
+    # Load Checkpoint if Requested
+    # -------------------------------
     if Nonmesh["layer_num"] > 0:
         print(f"Checkpoint loading for start of Layer {Nonmesh['layer_num']}")
         FILENAME = f"Checkpoint{str(Nonmesh['layer_num']).zfill(4)}.pkl"
 
-        # Load saved results into Levels, and load the current incrementers
-        with open(Path(np_path).joinpath(FILENAME), "rb") as f:
-            [Levels, accum_time, max_accum_time, time_inc_loaded, record_inc] = (
-                dill.load(f)
+        with open(np_path.joinpath(FILENAME), "rb") as f:
+            Levels, accum_time, max_accum_time, time_inc_loaded, record_inc = dill.load(
+                f
             )
 
-        # Set load_chkpt flag to True to use single-time stepping for first cycle
         load_chkpt = True
-
-        # Find byte position, then load for fast reload of toolpath
         line_len = len(tool_path_file.readline())
-        prev_end = time_inc_loaded * line_len
-        tool_path_file.seek(prev_end)
+        tool_path_file.seek(time_inc_loaded * line_len)
         time_inc += time_inc_loaded
     else:
-        # Flag to not use single time stepping due to loading
         load_chkpt = False
 
     # Start time loop
@@ -312,7 +319,6 @@ def go_melt(solver_input: dict):
                     )
 
                     if Nonmesh["info_T"]:
-                        troubleshoot += 1
                         print(f"Step {time_inc + 1} / {total_t_inc}")
                         printLevelMaxMin(Levels, level_names)
 
@@ -497,39 +503,50 @@ def go_melt(solver_input: dict):
 if __name__ == "__main__":
     os.system("clear")
 
-    # Check the number of arguments
+    # Clear terminal for clean output
+    os.system("clear")
+
+    # -------------------------------
+    # Parse Command-Line Arguments
+    # -------------------------------
     # Usage: python3 run_go_melt.py DEVICE_ID input_file
-    # Check DEVICE_ID argument
-    if len(sys.argv) > 1 and sys.argv[1].isdigit():
-        DEVICE_ID = int(sys.argv[1])
-    else:
+    DEVICE_ID = int(sys.argv[1]) if len(sys.argv) > 1 and sys.argv[1].isdigit() else 0
+    input_file = sys.argv[2] if len(sys.argv) > 2 else "examples/example.json"
+
+    if len(sys.argv) <= 1:
         print("GPU ID not provided. Setting GPU to 0.")
-        DEVICE_ID = 0
+    if len(sys.argv) <= 2:
+        print("Input file not provided. Using default: 'examples/example.json'.")
 
-    # Check input_file argument
-    if len(sys.argv) > 2:
-        input_file = sys.argv[2]
-    else:
-        print("Input file not provided. Setting input file to 'examples/example.json'.")
-        input_file = "examples/example.json"
-
-    # Initializing GPU
+    # -------------------------------
+    # Set Environment for JAX
+    # -------------------------------
     os.environ["CUDA_DEVICE_ORDER"] = "PCI_BUS_ID"
     os.environ["XLA_PYTHON_CLIENT_PREALLOCATE"] = "false"
+
     try:
-        # Always try to run on single GPU
+        # Attempt to assign GPU
         os.environ["CUDA_VISIBLE_DEVICES"] = str(DEVICE_ID)
     except:
-        # Run on CPU
+        # Fallback to CPU if GPU assignment fails
         import jax
 
         jax.config.update("jax_platform_name", "cpu")
         print("No GPU found. Running on CPU.")
 
-    with open(input_file, "r") as read_file:
-        solver_input = json.load(read_file)
+    # -------------------------------
+    # Load Input File
+    # -------------------------------
+    try:
+        with open(input_file, "r") as read_file:
+            solver_input = json.load(read_file)
+    except FileNotFoundError:
+        print(f"Error: Input file '{input_file}' not found.")
+        sys.exit(1)
 
-    # Run GO-MELT
+    # -------------------------------
+    # Launch GO-MELT Simulation
+    # -------------------------------
     print("Running GO-MELT")
     print(f"GPU: {DEVICE_ID}, Input File: {input_file}")
     go_melt(solver_input)
