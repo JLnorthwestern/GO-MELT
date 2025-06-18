@@ -2511,25 +2511,56 @@ def moveEverything(v, vstart, Levels, move_v, LInterp, L1L2Eratio, L2L3Eratio, h
 
 @partial(jax.jit, static_argnames=["substrate"])
 def updateStateProperties(Levels, properties, substrate):
+    """
+    Update material state fields (S1, S2) and compute thermal properties (k, rhocp)
+    for all levels based on current temperature and substrate configuration.
+
+    This function:
+      • Updates melt state indicators (S1, S2) for Levels 1-3.
+      • Computes temperature-dependent thermal conductivity and heat capacity.
+      • Interpolates state from Level 2 to Level 1 to maintain consistency.
+      • Applies substrate override to enforce solid state in substrate region.
+
+    Parameters:
+    Levels (dict): Multilevel mesh and field data.
+    properties (dict): Material and simulation properties.
+    substrate (list): List of substrate node indices for each level.
+
+    Returns:
+    tuple:
+        - Levels (dict): Updated with new S1, S2, and interpolated state.
+        - Lk (list): Thermal conductivity for Levels 1-3 (index-aligned with Levels).
+        - Lrhocp (list): Volumetric heat capacity for Levels 1-3 (index-aligned).
+    """
+    # --- Level 3: Fine scale ---
     Levels[3]["S1"], Levels[3]["S2"], L3k, L3rhocp = computeStateProperties(
         Levels[3]["T0"], Levels[3]["S1"], properties, substrate[3]
     )
+
+    # --- Level 2: Meso scale ---
     Levels[2]["S1"], L2S2, L2k, L2rhocp = computeStateProperties(
         Levels[2]["T0"], Levels[2]["S1"], properties, substrate[2]
     )
-    _val = interpolatePoints(Levels[2], Levels[2]["S1"], Levels[2]["overlapCoords"])
-    _idx = getOverlapRegion(
+
+    # --- Interpolate S1 from Level 2 to Level 1 ---
+    interpolated_S1 = interpolatePoints(
+        Levels[2], Levels[2]["S1"], Levels[2]["overlapCoords"]
+    )
+    overlap_idx_L1 = getOverlapRegion(
         Levels[2]["overlapNodes"], Levels[1]["nodes"][0], Levels[1]["nodes"][1]
     )
-    # Directly substitute into T0 to save deepcopy
-    Levels[1]["S1"] = Levels[1]["S1"].at[_idx].set(_val)
+    Levels[1]["S1"] = Levels[1]["S1"].at[overlap_idx_L1].set(interpolated_S1)
+
+    # Enforce solid state in substrate region of Level 1
     Levels[1]["S1"] = Levels[1]["S1"].at[: substrate[1]].set(1)
+
+    # --- Level 1: Coarse scale ---
     _, _, L1k, L1rhocp = computeStateProperties(
         Levels[1]["T0"], Levels[1]["S1"], properties, substrate[1]
     )
 
-    # 0 added to beginning of list so index matches levels
-    return (Levels, [0, L1k, L2k, L3k], [0, L1rhocp, L2rhocp, L3rhocp])
+    # Return updated Levels and thermal properties (0-indexed for alignment)
+    return Levels, [0, L1k, L2k, L3k], [0, L1rhocp, L2rhocp, L3rhocp]
 
 
 # S1 = 0 -> powder, S1 = 1 -> bulk
