@@ -2304,162 +2304,209 @@ def computeConvRadBC(Level, LevelT0, ne, nn, properties, F):
 def stepGOMELT(
     Levels, ne_nn, tmp_ne_nn, Shapes, LInterp, v, properties, dt, laserP, substrate
 ):
-    """stepGOMELT computes a Levels[1] explicit timestep starting by
-    computing the source terms for all three levels, computing the convection/radiation
-    terms for all three levels, computing the previous step volumetric correction terms,
-    computing solutions for all three levels (predictor step), calculating new Tprime terms
-    and their volumetric correction terms, computing solutions for all three levels (corrector step),
-    and finally updating the Tprime terms for the next explicit time step
-    :param Levels: contains all multilevel information
-    :param ne_nn: total number of elements/nodes (active and deactive)
-    :param tmp_ne_nn: number of elements/nodes active on Levels[1] mesh (based on layer)
-    :param Shapes[1]: shape functions/derivates/nodes from Levels[3] to Levels[1]
-    :param LInterp[1]: interpolation matrix/nodes from Levels[2] to Levels[3]
-    :param v: current position of laser (from reading file)
-    :param properties: all material properties
-    :param dt: timestep
-    :param laserP: laser Power
-    :param substrate: nodes that define substrate
-    :return Levels: update temperature and subgrid terms
     """
+    Perform a full explicit time step for the multilevel GOMELT simulation.
+
+    This function executes the following sequence:
+      1. Update material state and thermal properties.
+      2. Compute source terms (laser, convection, radiation) for all levels.
+      3. Compute volumetric correction terms from previous Tprime.
+      4. Predictor step: solve temperature fields for all levels.
+      5. Compute new Tprime fields and updated volumetric corrections.
+      6. Corrector step: solve temperature fields again using updated corrections.
+      7. Update Tprime and temperature fields for the next time step.
+
+    Parameters:
+    Levels (dict): Multilevel mesh and field data.
+    ne_nn (list): Total number of elements and nodes for each level.
+    tmp_ne_nn (list): Active element/node counts for Level 1 (based on layer).
+    Shapes (list): Shape function data for interpolation between levels.
+    LInterp (list): Interpolation matrices between levels.
+    v (array): Current laser position.
+    properties (dict): Material and simulation properties.
+    dt (float): Time step size.
+    laserP (float): Laser power.
+    substrate (array): Node indices defining the substrate region.
+
+    Returns:
+    tuple:
+        - Levels (dict): Updated multilevel data with new temperatures and Tprime fields.
+        - _resetmask (array): Boolean mask indicating newly activated melt regions.
+    """
+    # Store previous melt state for comparison
     preS2 = Levels[3]["S2"]
-    (Levels, Lk, Lrhocp) = updateStateProperties(Levels, properties, substrate)
 
-    L1, L2, L3 = [Levels[_] for _ in range(1, 4)]
+    # Update material state and thermal properties
+    Levels, Lk, Lrhocp = updateStateProperties(Levels, properties, substrate)
 
+    # Unpack levels for clarity
+    L1, L2, L3 = Levels[1], Levels[2], Levels[3]
+
+    # --- Compute source terms ---
     Fc, Fm, Ff = computeSources(L3, v, Shapes, ne_nn, properties, laserP)
     Fc = computeConvRadBC(L1, L1["T0"], tmp_ne_nn[0], ne_nn[2], properties, Fc)
     Fm = computeConvRadBC(L2, L2["T0"], ne_nn[0], ne_nn[3], properties, Fm)
     Ff = computeConvRadBC(L3, L3["T0"], ne_nn[1], ne_nn[4], properties, Ff)
-    F = [0, Fc, Fm, Ff]
+    F = [0, Fc, Fm, Ff]  # Source terms for Levels 1–3
 
+    # --- Predictor step ---
     Vcu, Vmu = computeCoarseTprimeTerm_jax(Levels, Lk[3], Lk[2], Shapes)
     L1T, L2T, L3T = computeSolutions(
         Levels, ne_nn, tmp_ne_nn, F, Vcu, LInterp, Lk, Lrhocp, Vmu, dt, properties
     )
-    L1T = jnp.maximum(properties["T_amb"], L1T)  # TFSP
-    L2T = jnp.maximum(properties["T_amb"], L2T)  # TFSP
-    L3T = jnp.maximum(properties["T_amb"], L3T)  # TFSP
+
+    # Enforce minimum temperature (TFSP)
+    L1T = jnp.maximum(properties["T_amb"], L1T)
+    L2T = jnp.maximum(properties["T_amb"], L2T)
+    L3T = jnp.maximum(properties["T_amb"], L3T)
+
+    # --- Compute new Tprime fields ---
     L3Tp, L2Tp, L2T, L1T = getBothNewTprimes(
         Levels, L3T, L2T, LInterp[1], L1T, LInterp[0]
     )
+
+    # --- Update volumetric correction terms ---
     Vcu, Vmu = computeCoarseTprimeMassTerm_jax(
         Levels, L3Tp, L2Tp, Lrhocp[3], Lrhocp[2], dt, Shapes, Vcu, Vmu
     )
+
+    # --- Corrector step ---
     L1T, L2T, Levels[3]["T0"] = computeSolutions(
         Levels, ne_nn, tmp_ne_nn, F, Vcu, LInterp, Lk, Lrhocp, Vmu, dt, properties
     )
-    L1T = jnp.maximum(properties["T_amb"], L1T)  # TFSP
-    L2T = jnp.maximum(properties["T_amb"], L2T)  # TFSP
-    Levels[3]["T0"] = jnp.maximum(properties["T_amb"], Levels[3]["T0"])  # TFSP
+
+    # Enforce minimum temperature again (TFSP)
+    L1T = jnp.maximum(properties["T_amb"], L1T)
+    L2T = jnp.maximum(properties["T_amb"], L2T)
+    Levels[3]["T0"] = jnp.maximum(properties["T_amb"], Levels[3]["T0"])
+
+    # --- Final Tprime update for next time step ---
     Levels[3]["Tprime0"], Levels[2]["Tprime0"], Levels[2]["T0"], Levels[1]["T0"] = (
         getBothNewTprimes(Levels, Levels[3]["T0"], L2T, LInterp[1], L1T, LInterp[0])
     )
 
+    # --- Update global state arrays ---
     Levels[0]["S1"] = Levels[0]["S1"].at[Levels[0]["idx"]].set(Levels[3]["S1"])
     Levels[0]["S2"] = Levels[0]["S2"].at[:].set(False)
     Levels[0]["S2"] = Levels[0]["S2"].at[Levels[0]["idx"]].set(Levels[3]["S2"])
+
+    # Identify newly activated melt regions
     _resetmask = ((1 - 2 * preS2) * Levels[3]["S2"]) == 1
+
     return Levels, _resetmask
 
 
 @jax.jit
 def moveEverything(v, vstart, Levels, move_v, LInterp, L1L2Eratio, L2L3Eratio, height):
-    ###### moveL3Mesh #####
+    """
+    Move the multilevel mesh system in response to laser motion.
+
+    This function updates node coordinates, interpolates temperature and subgrid
+    fields, and recalculates shape functions for Levels 1-3 based on the laser's
+    movement vector.
+
+    Parameters:
+    v (array): Current laser position.
+    vstart (array): Initial laser position.
+    Levels (dict): Multilevel mesh and field data.
+    move_v (array): Previous movement vector (used for scaling).
+    LInterp (list): Interpolation matrices between levels.
+    L1L2Eratio (list): Element ratio from Level 1 to Level 2 in [x, y, z].
+    L2L3Eratio (list): Element ratio from Level 2 to Level 3 in [x, y, z].
+    height (float): Layer height in mm.
+
+    Returns:
+    tuple:
+        - Levels (dict): Updated mesh and field data.
+        - Shapes (list): Updated shape function data.
+        - LInterp (list): Updated interpolation matrices.
+        - move_v (array): Updated movement vector.
+    """
+    # --- Move Level 3 (finest) ---
     vtot = v - vstart
-    _L3v_tot_con = jit_constrain_v(vtot, Levels[3])
+    v_L3_constrained = jit_constrain_v(vtot, Levels[3])
 
-    ### Correction step (fine) ###
-    Levels3newcoords, _a = move_fine_mesh(
-        Levels[3]["init_node_coors"], Levels[2]["h"], _L3v_tot_con
+    # Move mesh and update coordinates
+    new_coords_L3, _ = move_fine_mesh(
+        Levels[3]["init_node_coors"], Levels[2]["h"], v_L3_constrained
     )
-
-    # Element ratios are [1,1,1] since they are updated later
     Levels[3] = update_overlap_nodes_coords(
-        Levels[3], _L3v_tot_con, Levels[2]["h"], [1, 1, 1]
+        Levels[3], v_L3_constrained, Levels[2]["h"], [1, 1, 1]
     )
 
-    Levels[3]["T0"] = interpolatePoints(Levels[1], Levels[1]["T0"], Levels3newcoords)
-    _3T0 = interpolatePoints(Levels[2], Levels[2]["Tprime0"], Levels3newcoords)
-    Levels[3]["Tprime0"] = interpolatePoints(
-        Levels[3], Levels[3]["Tprime0"], Levels3newcoords
+    # Interpolate temperature and subgrid fields
+    Levels[3]["T0"] = interpolatePoints(Levels[1], Levels[1]["T0"], new_coords_L3)
+    Tprime_L2 = interpolatePoints(Levels[2], Levels[2]["Tprime0"], new_coords_L3)
+    Tprime_L3 = interpolatePoints(Levels[3], Levels[3]["Tprime0"], new_coords_L3)
+    Levels[3]["T0"] += Tprime_L2 + Tprime_L3
+    Levels[3]["Tprime0"] = Tprime_L3
+    Levels[3]["node_coords"] = new_coords_L3
+
+    # --- Move Level 2 ---
+    v_L2_constrained = jit_constrain_v(vtot, Levels[2])
+    h_L1 = Levels[1]["h"][:2]
+    h_L1.append(jnp.array(height))
+    new_coords_L2, move_v = move_fine_mesh(
+        Levels[2]["init_node_coors"], h_L1, v_L2_constrained
     )
-    Levels[3]["T0"] += _3T0 + Levels[3]["Tprime0"]
-    Levels[3]["node_coords"] = Levels3newcoords
-    ###### moveL3Mesh #####
-
-    ###### prepL2Move #####
-    _v_tot_con = jit_constrain_v(vtot, Levels[2])
-    _tmp = Levels[1]["h"][:2]
-    _tmp.append(jnp.array(height))
-
-    Levels2newcoords, move_v = move_fine_mesh(
-        Levels[2]["init_node_coors"], _tmp, _v_tot_con
-    )
-
     move_v = [move_v[i] * L1L2Eratio[i] for i in range(3)]
 
     Levels[2] = update_overlap_nodes_coords_L1L2(
-        Levels[2], _v_tot_con, Levels[1]["h"], height
+        Levels[2], v_L2_constrained, Levels[1]["h"], height
     )
-    ###### prepL2Move #####
 
-    ###### updateL2objects #####
-    Levels[2]["T0"] = interpolatePoints(Levels[1], Levels[1]["T0"], Levels2newcoords)
+    # Interpolate temperature and subgrid fields
+    Levels[2]["T0"] = interpolatePoints(Levels[1], Levels[1]["T0"], new_coords_L2)
     Levels[2]["Tprime0"] = interpolatePoints(
-        Levels[2], Levels[2]["Tprime0"], Levels2newcoords
+        Levels[2], Levels[2]["Tprime0"], new_coords_L2
     )
     Levels[2]["T0"] += Levels[2]["Tprime0"]
-    Levels[2]["node_coords"] = Levels2newcoords
+    Levels[2]["node_coords"] = new_coords_L2
 
-    # If mesh moves, recalculate shape functions
+    # Recompute shape functions and interpolation matrix
     L2L1Shape = computeCoarseFineShapeFunctions(Levels[1], Levels[2])
-    LInterp[0] = interpolatePointsMatrix(Levels[1], Levels2newcoords)
-    ###### updateL2objects #####
+    LInterp[0] = interpolatePointsMatrix(Levels[1], new_coords_L2)
 
-    ###### updateL3AfterMove #####
+    # --- Update Level 3 overlap nodes after Level 2 move ---
     Levels[3]["overlapNodes"] = [
         Levels[3]["overlapNodes"][i] - move_v[i] for i in range(3)
     ]
-    ###### updateL3AfterMove #####
-    # Update Level 0
+
+    # --- Update Level 0 (global) ---
     Levels[0] = update_overlap_nodes_coords(
-        Levels[0], _L3v_tot_con, Levels[2]["h"], L2L3Eratio
+        Levels[0], v_L3_constrained, Levels[2]["h"], L2L3Eratio
     )
     Levels[0] = update_overlap_nodes_coords_L2(
         Levels[0],
-        _v_tot_con,
+        v_L2_constrained,
         [Levels[1]["h"][0], Levels[1]["h"][1], Levels[2]["h"][2]],
         [L1L2Eratio[0] * L2L3Eratio[0], L1L2Eratio[1] * L2L3Eratio[1], L2L3Eratio[2]],
     )
-    # Track movement of Level 0 in z-direction with Level 3, but nothing else.
-    Levels[0]["overlapNodes"][2] = (
-        Levels[0]["overlapNodes"][2] - move_v[2] * L2L3Eratio[2]
-    )
-    Levels[0]["overlapNodes_L2"][2] = (
-        Levels[0]["overlapNodes_L2"][2] - move_v[2] * L2L3Eratio[2]
-    )
+
+    # Track z-direction movement only for Level 0
+    Levels[0]["overlapNodes"][2] -= move_v[2] * L2L3Eratio[2]
+    Levels[0]["overlapNodes_L2"][2] -= move_v[2] * L2L3Eratio[2]
+
+    # Update overlap indices
     Levels[0]["idx"] = getOverlapRegion(
         Levels[0]["overlapNodes"], Levels[0]["nodes"][0], Levels[0]["nodes"][1]
     )
     Levels[0]["idx_L2"] = getOverlapRegion(
         Levels[0]["overlapNodes_L2"], Levels[0]["nodes"][0], Levels[0]["nodes"][1]
     )
+
+    # Update subgrid state fields
     Levels[2]["S1"] = Levels[2]["S1"].at[:].set(Levels[0]["S1"][Levels[0]["idx_L2"]])
     Levels[3]["S1"] = Levels[3]["S1"].at[:].set(Levels[0]["S1"][Levels[0]["idx"]])
     Levels[3]["S2"] = Levels[3]["S2"].at[:].set(Levels[0]["S2"][Levels[0]["idx"]])
 
-    # If mesh moves, recalculate shape functions
+    # Recompute shape functions for updated meshes
     L3L1Shape = computeCoarseFineShapeFunctions(Levels[1], Levels[3])
-
-    # Move Levels[3] with respect to Levels[2]
     L3L2Shape = computeCoarseFineShapeFunctions(Levels[2], Levels[3])
-
-    LInterp[1] = interpolatePointsMatrix(Levels[2], Levels3newcoords)
-    ###### updateL3AfterMove #####
+    LInterp[1] = interpolatePointsMatrix(Levels[2], new_coords_L3)
 
     Shapes = [L2L1Shape, L3L1Shape, L3L2Shape]
-    return (Levels, Shapes, LInterp, move_v)
+    return Levels, Shapes, LInterp, move_v
 
 
 @partial(jax.jit, static_argnames=["substrate"])
