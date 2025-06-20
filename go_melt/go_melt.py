@@ -128,32 +128,38 @@ def go_melt(solver_input: dict):
     else:
         load_chkpt = False
 
-    # Start time loop
+    # -------------------------------
+    # Start Time Loop
+    # -------------------------------
     while ongoing_simulation:
-        # Start time of single time loop execution
-        t_loop = time.time()
+        t_loop = time.time()  # Start timer for this loop
 
-        # Read n2 x n3 number of lines in laser path file (n#: no. subcycles in Level #)
+        # -----------------------------------
+        # Read laser path for one full subcycle (n2 × n3 lines)
+        # -----------------------------------
         _pos = [
             tool_path_file.readline().split(",")
             for _2 in range(subcycle[0] * subcycle[1])
         ]
 
-        # Process laser path into np.array that can be used for calculations
+        # Convert laser path to array if valid, else handle end-of-file
         if [""] not in _pos:
-            # Set up for full subcycle or single time-stepping for n2 x n3 steps
             t_add = subcycle[2]
-            laser_all = jnp.array([[float(_) for _ in _pos[_2]] for _2 in range(t_add)])
+            laser_all = jnp.array([[float(val) for val in line] for line in _pos])
         else:
             # Set up for partial single time-stepping and end simulation afterwards
             t_add = _pos.index([""])
-            laser_all = jnp.array([[float(_) for _ in _pos[_2]] for _2 in range(t_add)])
+            laser_all = jnp.array(
+                [[float(val) for val in _pos[i]] for i in range(t_add)]
+            )
             ongoing_simulation = False
             if t_add == 0:
                 break
 
-        # Single step if layer change, checkpoint, dwell time, or end. Else, subcycle.
-        if (
+        # -----------------------------------
+        # Determine if single-step is needed
+        # -----------------------------------
+        single_step = (
             any(laser_all[:, 2] != laser_prev_z)
             or load_chkpt
             or (wait_inc > max(0, Nonmesh["wait_time"] - subcycle[0] * subcycle[1] * 2))
@@ -163,23 +169,18 @@ def go_melt(solver_input: dict):
                 jnp.abs(jnp.diff(laser_all, axis=0)[:, :2] / laser_all[:-1, 5].max())
                 > (100 * Nonmesh["laser_velocity"])
             ).any()
-        ):
-            single_step = True
-        else:
-            single_step = False
+        )
 
-        # Solve each level using the same time step (from the finest level)
+        # -----------------------------------
+        # Single-Step Execution (Equal time step for each Level)
+        # -----------------------------------
         if single_step:
-            # Use single step for entire batch
             for laser_pos in laser_all:
-                # If dwell time indicator in laser_position file is 0, increment wait
                 wait_inc = wait_inc + 1 if laser_pos[4] == 0 else 0
 
-                # If layer changed and not beginning of simulation or after load, save
+                # Save checkpoint if layer changes and not from checkpoint
                 if laser_pos[2] != laser_prev_z and time_inc > 0 and not load_chkpt:
-                    # Save checkpoint
                     new_checkpoint = True
-                    # Clear existing caches to prevent any issues with memory
                     try:
                         stepGOMELT._clear_cache()
                         stepGOMELTDwellTime._clear_cache()
@@ -191,20 +192,25 @@ def go_melt(solver_input: dict):
                         gc.collect()
                         print("Cleared some cache")
 
-                # If layer changed, calculate updates
+                # -----------------------------------
+                # Handle Layer Change
+                # -----------------------------------
                 if laser_pos[2] != laser_prev_z:
-
                     trying_flag = True
                     tmp_coords = copy.deepcopy(Levels[1]["orig_node_coords"])
                     _L1T_state_idx = 0
+
+                    # Find matching z-layer in Level 1
                     while trying_flag:
                         if jnp.isclose(
                             tmp_coords[2] - laser_pos[2], 0, atol=1e-4
                         ).any():
                             trying_flag = False
                         else:
-                            tmp_coords[2] = tmp_coords[2] + Properties["layer_height"]
+                            tmp_coords[2] += Properties["layer_height"]
                             _L1T_state_idx += 1
+
+                    # Update Level 1 state if not loading from checkpoint
                     if not load_chkpt:
                         Levels[1]["T0"] = jnp.maximum(
                             interpolatePoints(Levels[1], Levels[1]["T0"], tmp_coords),
@@ -217,6 +223,8 @@ def go_melt(solver_input: dict):
                         )
                         Levels[1]["S1"] = Levels[1]["S1_storage"][_L1T_state_idx, :]
                         Levels[1]["node_coords"] = copy.deepcopy(tmp_coords)
+
+                    # Update interpolation matrices and static node/element info
                     L1L2Interp = interpolatePointsMatrix(
                         Levels[1], Levels[2]["node_coords"]
                     )
@@ -224,24 +232,16 @@ def go_melt(solver_input: dict):
                         Levels[2], Levels[3]["node_coords"]
                     )
                     LInterp = [L1L2Interp, L2L3Interp]
-
-                    # Find new static values for active elements in Level 1
                     tmp_ne_nn = calcStaticTmpNodesAndElements(Levels, laser_pos)
 
-                    # Update layer number comparison
+                    # Update layer tracking and flags
                     laser_prev_z = laser_pos[2]
-
-                    # Move the meshes for Levels 2 and 3
                     force_move = True
-
-                    # Reset the dwell time counter
                     wait_inc = 0
-
-                    # Indicate additional calculation to calculate new substrate nodes
                     move_vert = True
 
                     if not load_chkpt:
-                        # Save Level 0 layer
+                        # Save Level 0 state at the start of a new layer
                         saveState(
                             Levels[0],
                             "Level0_",
@@ -249,7 +249,9 @@ def go_melt(solver_input: dict):
                             Nonmesh["save_path"],
                             0,
                         )
+
                         if record_accum:
+                            # Save accumulated melt time
                             accum_time = jnp.maximum(accum_time, max_accum_time)
                             jnp.savez(
                                 Nonmesh["save_path"]
@@ -257,7 +259,8 @@ def go_melt(solver_input: dict):
                                 + str(Nonmesh["layer_num"]).zfill(4),
                                 accum_time=accum_time,
                             )
-                        # Shift Level 0 down since moving vertically
+
+                        # Shift Level 0 data down to simulate vertical mesh movement
                         _0nn1 = (
                             Levels[0]["nodes"][0]
                             * Levels[0]["nodes"][1]
@@ -268,22 +271,29 @@ def go_melt(solver_input: dict):
                             * Levels[0]["nodes"][1]
                             * (Levels[0]["nodes"][2] - Levels[0]["layer_idx_delta"])
                         )
+
                         Levels[0]["S1"] = (
                             Levels[0]["S1"].at[:_0nn2].set(Levels[0]["S1"][_0nn1:])
                         )
                         Levels[0]["S1"] = Levels[0]["S1"].at[_0nn2:].set(0)
+
+                        # Update z-coordinates for Level 0
                         Levels[0]["node_coords"][2] = (
                             Levels[0]["orig_node_coords"][2]
                             + laser_pos[2]
                             - Levels[0]["orig_node_coords"][2][-1]
                         )
+
                         if record_accum:
                             max_accum_time = jnp.zeros(Levels[0]["nn"])
                             accum_time = accum_time.at[:_0nn2].set(accum_time[_0nn1:])
                             accum_time = accum_time.at[_0nn2:].set(0)
+
                 force_move = True
 
-                # If indicated, update mesh positions for Levels 2 and 3
+                # -----------------------------------
+                # Move Meshes if Needed
+                # -----------------------------------
                 if force_move:
                     force_move = False
                     (Levels, Shapes, LInterp, move_hist) = moveEverything(
@@ -296,15 +306,17 @@ def go_melt(solver_input: dict):
                         L2L3Eratio,
                         Properties["layer_height"],
                     )
-                    # If indicated, calculate new substrate nodes for Levels 1, 2, and 3
+
                     if move_vert:
                         move_vert = False
                         substrate = getSubstrateNodes(Levels)
                         print("Start of new layer")
 
-                # If not in dwell time, calculate all three levels. Else, just Level 1
+                # -----------------------------------
+                # Solve Thermal Fields
+                # -----------------------------------
                 if wait_inc <= Nonmesh["wait_time"]:
-                    # Calculate updated temperature and phase fields for all Levels
+                    # Full GO-MELT step (Levels 1–3)
                     Levels, all_reset = stepGOMELT(
                         Levels,
                         ne_nn,
@@ -322,7 +334,7 @@ def go_melt(solver_input: dict):
                         print(f"Step {time_inc + 1} / {total_t_inc}")
                         printLevelMaxMin(Levels, level_names)
 
-                    # Update elapsed real time using Level 3 dt
+                    # Update accumulated melt time
                     if record_accum:
                         _resetaccumtime = accum_time[Levels[0]["idx"]] * (all_reset > 0)
                         _max_check = jnp.maximum(
@@ -334,6 +346,7 @@ def go_melt(solver_input: dict):
                         accum_time = accum_time.at[Levels[0]["idx"]].add(
                             -_resetaccumtime
                         )
+
                         accum_time = melting_temp(
                             Levels[3]["T0"],
                             laser_pos[5],  # Time step size
@@ -342,7 +355,7 @@ def go_melt(solver_input: dict):
                             Levels[0]["idx"],
                         )
                 else:
-                    # Reset subgrid terms for Levels 2 and 3 (important for later moves)
+                    # Dwell time: only update Level 1
                     if (
                         not (Levels[2]["Tprime0"] == 0).all()
                         and not (Levels[3]["Tprime0"] == 0).all()
@@ -353,7 +366,6 @@ def go_melt(solver_input: dict):
                         Levels[2]["Tprime0"] = Levels[2]["Tprime0"].at[:].set(0)
                         Levels[3]["Tprime0"] = Levels[3]["Tprime0"].at[:].set(0)
 
-                    # Calculate updated temperature and phase fields for Level 1
                     Levels = stepGOMELTDwellTime(
                         Levels,
                         tmp_ne_nn,
@@ -365,42 +377,47 @@ def go_melt(solver_input: dict):
                     _dwell_time_count += laser_pos[5]
                     print(f"Dwell Time {_dwell_time_count:.6f} s")
 
-                # Increment counters for total time steps and recording data
+                # -----------------------------------
+                # Increment Time and Record Counters
+                # -----------------------------------
                 time_inc += 1
                 record_inc += 1
 
-            # Save current simulation data in checkpoint file
+            # -----------------------------------
+            # Save Checkpoint if Needed
+            # -----------------------------------
             if new_checkpoint:
                 Nonmesh["layer_num"] += 1
                 print(f"Saving checkpoint for Layer {Nonmesh['layer_num']}")
+
                 FILENAME = f"Checkpoint{str(Nonmesh['layer_num']).zfill(4)}.pkl"
                 if not os.path.exists(np_path):
                     os.makedirs(np_path)
+
                 save_object(
                     [Levels, accum_time, max_accum_time, time_inc, record_inc],
                     Path(np_path).joinpath(FILENAME),
                 )
                 print("Saved Checkpoint")
+
+                # End simulation if final layer reached
                 if Nonmesh["layer_num"] == layer_check:
                     return
 
-                # Turn off flag to save new checkpoint
                 new_checkpoint = False
-
-                # Using single time steps for the next layer
-                load_chkpt = True
+                load_chkpt = True  # Use single-step for next layer
             else:
-                # Do not use single time-stepping due to checkpoint loading
                 load_chkpt = False
-        else:  # if single_step:
-            # Do subcycling even when power is off. Still increment wait time
+
+        else:  # Subcycling mode
+            # Update wait time if laser is off
             wait_inc = (
                 wait_inc + len(laser_all) - laser_all[:, 4].sum()
                 if (laser_all[:, 4] == 0).any()
                 else 0
             )
 
-            # Always do mesh movement when using subcycling
+            # Always move mesh in subcycling
             (Levels, Shapes, LInterp, move_hist) = moveEverything(
                 laser_all[0, :],
                 laser_start,
@@ -412,10 +429,10 @@ def go_melt(solver_input: dict):
                 Properties["layer_height"],
             )
 
-            # Calculate power at each of the laser center positions (can be 0)
+            # Extract power values for each substep
             _P = laser_all[:, 6]
 
-            # Update temperature and phase fields for all three levels numerically
+            # Run full GO-MELT subcycling
             Levels, L2all, L3all, L3pall, _max_accum, _accum = subcycleGOMELT(
                 Levels,
                 ne_nn,
@@ -440,53 +457,69 @@ def go_melt(solver_input: dict):
             time_inc += t_add
             record_inc += t_add
 
+        # -----------------------------------
+        # Output and Monitoring
+        # -----------------------------------
         t_output += laser_all[:, 5].sum()
 
-        # If not in dwell time, record the temperature field for all three levels
+        # Save results if record step reached
         if record_inc >= Nonmesh["record_step"]:
             record_inc = 0
             savenum = int(time_inc / Nonmesh["record_step"]) + 1
             saveResults(Levels, Nonmesh, savenum)
 
-        # If indicated, print out temperature information for each level
+        # Print temperature info if enabled
         if Nonmesh["info_T"]:
             printLevelMaxMin(Levels, level_names)
 
-        # Record time needed to complete loop of GO-MELT
+        # Timing diagnostics
         tend = time.time()
-
-        # Calculate timing outputs used for monitoring progress
         t_duration = tend - tstart
         t_now = 1000 * (tend - t_loop)
         t_avg = 1000 * t_duration / time_inc
+        execution_time_rem = (
+            ((tend - t_loop) / subcycle[2]) * (total_t_inc - time_inc) / 3600
+        )
 
-        # Iteration, Real Time Sim, Wall Time Elapsed, Loop ms/dt, Average ms/dt
+        # Convert to hours, minutes, and seconds
+        hours = int(execution_time_rem // 3600)
+        minutes = int((execution_time_rem % 3600) // 60)
+        seconds = int(execution_time_rem % 60)
+
         print(
             "%d/%d, Real: %.6f s, Wall: %.2f s, Loop: %5.2f ms, Avg: %5.2f ms/dt"
             % (time_inc, total_t_inc, t_output, t_duration, t_now, t_avg)
         )
+        print(
+            "Laser location: X: %.2f, Y: %.2f, Z: %.2f"
+            % (laser_all[-1, 0], laser_all[-1, 1], laser_all[-1, 2])
+        )
+        print(f"Estimated execution time remaining: {hours}h {minutes}m {seconds}s")
 
-    # Close file
+    # -----------------------------------
+    # Finalization
+    # -----------------------------------
     tool_path_file.close()
 
-    # Save final Level 0
+    # Save final Level 0 state and temperature fields
     saveState(Levels[0], "Level0_", Nonmesh["layer_num"], Nonmesh["save_path"], 0)
-    # Save final temperature fields
     saveResultsFinal(Levels, Nonmesh)
+
     jnp.savez(
         f"{Nonmesh['save_path']}FinalTemperatureFields",
         L1T=Levels[1]["T0"],
         L2T=Levels[2]["T0"],
         L3T=Levels[3]["T0"],
     )
+
     if record_accum:
         accum_time = jnp.maximum(accum_time, max_accum_time)
-        # Save final accumulation time
         jnp.savez(
             Nonmesh["save_path"] + "accum_time" + str(Nonmesh["layer_num"]).zfill(4),
             accum_time=accum_time,
         )
 
+    # Clear JAX caches
     try:
         stepGOMELT._clear_cache()
         stepGOMELTDwellTime._clear_cache()
@@ -497,12 +530,11 @@ def go_melt(solver_input: dict):
     except:
         gc.collect()
         print("Cleared some cache")
+
     print("End of simulation")
 
 
 if __name__ == "__main__":
-    os.system("clear")
-
     # Clear terminal for clean output
     os.system("clear")
 
