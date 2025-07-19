@@ -14,10 +14,10 @@ GO-MELT, short for GPU-Optimized Multilevel Execution of LPBF Thermal simulation
 go_melt_folder=GO_MELT \
 && git clone https://github.com/JLnorthwestern/GO-MELT $go_melt_folder \
 && cd $go_melt_folder \
-&& python3.9 -m venv .venv \
+&& python3 -m venv .venv \
 && source .venv/bin/activate \
 && pip3 install -r requirements.txt \
-&& python3 go_melt/runtestMultiscale.py
+&& python3 go_melt/go_melt.py
 ```
 
 ## Citations
@@ -38,6 +38,21 @@ If you found this library useful in academic or industry work, we appreciate you
   doi = {https://doi.org/10.1016/j.cma.2024.116977},
   url = {https://www.sciencedirect.com/science/article/pii/S0045782524002330},
   author = {Joseph P. Leonor and Gregory J. Wagner},
+  publisher = {Elsevier}
+}
+```
+Efficient part-scale thermal modeling of laser powder bed fusion via a multilevel finite element framework (In press).
+```bibtex
+@article{elahi2025,
+  title = {Efficient part-scale thermal modeling of laser powder bed fusion via a multilevel finite element framework},
+  journal = {Additive Manufacturing},
+  volume = {},
+  pages = {},
+  year = {In press},
+  issn = {},
+  doi = {},
+  url = {},
+  author = {Seyed M. Elahi and Joseph P. Leonor and Reese Y. Wu and Gregory J. Wagner},
   publisher = {Elsevier}
 }
 ```
