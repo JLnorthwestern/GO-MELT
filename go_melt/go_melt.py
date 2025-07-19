@@ -310,6 +310,7 @@ def go_melt(solver_input: dict):
                     if move_vert:
                         move_vert = False
                         substrate = getSubstrateNodes(Levels)
+                        Levels[0]["S1"] = Levels[0]["S1"].at[: substrate[0]].set(1)
                         print("Start of new layer")
 
                 # -----------------------------------
@@ -481,11 +482,6 @@ def go_melt(solver_input: dict):
             ((tend - t_loop) / subcycle[2]) * (total_t_inc - time_inc) / 3600
         )
 
-        # Convert to hours, minutes, and seconds
-        hours = int(execution_time_rem // 3600)
-        minutes = int((execution_time_rem % 3600) // 60)
-        seconds = int(execution_time_rem % 60)
-
         print(
             "%d/%d, Real: %.6f s, Wall: %.2f s, Loop: %5.2f ms, Avg: %5.2f ms/dt"
             % (time_inc, total_t_inc, t_output, t_duration, t_now, t_avg)
@@ -494,7 +490,7 @@ def go_melt(solver_input: dict):
             "Laser location: X: %.2f, Y: %.2f, Z: %.2f"
             % (laser_all[-1, 0], laser_all[-1, 1], laser_all[-1, 2])
         )
-        print(f"Estimated execution time remaining: {hours}h {minutes}m {seconds}s")
+        print(f"Estimated execution time remaining: {execution_time_rem:.4f} hours")
 
     # -----------------------------------
     # Finalization

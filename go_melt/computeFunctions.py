@@ -573,9 +573,9 @@ def getSubstrateNodes(Levels):
     """
     substrate = [
         ((L["node_coords"][2] < 1e-5).sum() * L["nodes"][0] * L["nodes"][1]).tolist()
-        for L in Levels[1:4]
+        for L in Levels[:4]
     ]
-    return (0, *substrate)
+    return tuple(substrate)
 
 
 @partial(jax.jit, static_argnames=["ne", "nn"])
