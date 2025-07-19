@@ -52,7 +52,7 @@ Efficient part-scale thermal modeling of laser powder bed fusion via a multileve
   issn = {},
   doi = {},
   url = {},
-  author = {Seyed M. Elahi and Joseph P. Leonor and Reese Y. Wu and Gregory J. Wagner},
+  author = {Mohammad Elahi and Joseph P. Leonor and Reese Y. Wu and Gregory J. Wagner},
   publisher = {Elsevier}
 }
 ```
