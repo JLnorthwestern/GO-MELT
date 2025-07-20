@@ -1843,7 +1843,7 @@ def update_overlap_nodes_coords_L2(Level, vcon, element_size, ele_ratio):
     return Level
 
 
-@partial(jax.jit, static_argnames=["_idx", "_val"])
+@partial(jax.jit, static_argnames=["_idx"])
 def substitute_Tbar(Tbar, _idx, _val):
     """
     Replace a slice of the Tbar array starting at a given index with a new value.
