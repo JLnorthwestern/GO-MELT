@@ -21,7 +21,10 @@ def parsingGcode(Nonmesh, Properties, L2h):
         gcode = gcode_file.read()
 
     # First pattern to match either X, Y, or Z coordinates
-    pattern1 = r"(?:G(\d+).*?X(\d+\.\d+|\d+).*?Y(\d+\.\d+|\d+)(?:.*?Z(\d+\.\d+|\d+))?)"
+    pattern1 = (
+        r"(?:G(\d+)\s*X(-?\d+\.\d+|-?\d+)\s*Y(-?\d+\.\d+|-?\d+)"
+        r"(?:\s*Z(-?\d+\.\d+|-?\d+))?)"
+    )
     matches = re.findall(pattern1, gcode)
 
     # Laser center coordinate (LCC) list (which is read by GO-MELT)
