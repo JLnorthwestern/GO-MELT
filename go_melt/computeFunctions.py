@@ -1785,7 +1785,8 @@ def update_overlap_nodes_coords_L1L2(Level, vcon, element_size, powder_layer):
     """
     shift_x = (vcon[0] / element_size[0] + 1e-2).astype(int)
     shift_y = (vcon[1] / element_size[1] + 1e-2).astype(int)
-    shift_z = ((vcon[2] + powder_layer) / element_size[2] + 1e-2).astype(int)
+    shift_z = (vcon[2] / element_size[2] + 1e-2).astype(int)
+    shift_z_p = powder_layer * (vcon[2] / powder_layer + 1e-2).astype(int)
 
     Level["overlapNodes"] = [
         Level["orig_overlap_nodes"][0] + shift_x,
@@ -1796,7 +1797,7 @@ def update_overlap_nodes_coords_L1L2(Level, vcon, element_size, powder_layer):
     Level["overlapCoords"] = [
         Level["orig_overlap_coors"][0] + element_size[0] * shift_x,
         Level["orig_overlap_coors"][1] + element_size[1] * shift_y,
-        Level["orig_overlap_coors"][2] + element_size[2] * (vcon[2] / element_size[2]),
+        Level["orig_overlap_coors"][2] + shift_z_p,
     ]
 
     return Level

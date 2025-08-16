@@ -48,6 +48,8 @@ def parsingGcode(Nonmesh, Properties, L2h):
 
     # Calculating segments length and generating toolpath
     with open(Nonmesh["toolpath"], "w") as toolpath:
+        z = LCC[0][2]
+
         for i in range(len(LCC) - 1):
             # Ljump == 0 during jump in laser path, Ldwell == 0 during dwell time
             Ljump, Ldwell = 1, 1
@@ -64,7 +66,8 @@ def parsingGcode(Nonmesh, Properties, L2h):
                     dt = Nonmesh["timestep_L3"]
                     P = 0
                     toolpath.write(
-                        f"{new_x:.8e},{new_y:.8e},{z:.8e},{Ljump:d},{Ldwell:d},{dt:.8e},{P:.8e}\n"
+                        f"{format_fixed(new_x)},{format_fixed(new_y)},"
+                        f"{format_fixed(z)},{Ljump:d},{Ldwell:d},{dt:.8e},{P:.8e}\n"
                     )
                     move_mesh += 1
 
@@ -80,7 +83,8 @@ def parsingGcode(Nonmesh, Properties, L2h):
                         dt = Nonmesh["timestep_L3"] * dwell_t_coef
                         P = 0
                         toolpath.write(
-                            f"{new_x:.8e},{new_y:.8e},{z:.8e},{Ljump:d},{Ldwell:d},{dt:.8e},{P:.8e}\n"
+                            f"{format_fixed(new_x)},{format_fixed(new_y)},"
+                            f"{format_fixed(z)},{Ljump:d},{Ldwell:d},{dt:.8e},{P:.8e}\n"
                         )
                         move_mesh += 1
                     smalldt = (
@@ -89,7 +93,9 @@ def parsingGcode(Nonmesh, Properties, L2h):
                     if smalldt > 0:
                         P = 0
                         toolpath.write(
-                            f"{new_x:.8e},{new_y:.8e},{z:.8e},{Ljump:d},{Ldwell:d},{smalldt:.8e},{P:.8e}\n"
+                            f"{format_fixed(new_x)},{format_fixed(new_y)},"
+                            f"{format_fixed(z)},{Ljump:d},{Ldwell:d},{smalldt:.8e},"
+                            f"{P:.8e}\n"
                         )
                         move_mesh += 1
                 continue  # Skip this segment
@@ -121,7 +127,8 @@ def parsingGcode(Nonmesh, Properties, L2h):
                 new_y += dy_segment * Nonmesh["timestep_L3"]
                 _P = Ljump * Properties["laser_power"]
                 toolpath.write(
-                    f"{new_x:.8e},{new_y:.8e},{z:.8e},{Ljump:d},{Ldwell:d},{Nonmesh['timestep_L3']:.8e},{_P:.8e}\n"
+                    f"{format_fixed(new_x)},{format_fixed(new_y)},{format_fixed(z)},"
+                    f"{Ljump:d},{Ldwell:d},{Nonmesh['timestep_L3']:.8e},{_P:.8e}\n"
                 )
                 move_mesh += 1
             if shortdt > 0:
@@ -140,7 +147,8 @@ def parsingGcode(Nonmesh, Properties, L2h):
                 new_y += dy_segment * shortdt
                 _P = Ljump * Properties["laser_power"]
                 toolpath.write(
-                    f"{new_x:.8e},{new_y:.8e},{z:.8e},{Ljump:d},{Ldwell:d},{shortdt:.8e},{_P:.8e}\n"
+                    f"{format_fixed(new_x)},{format_fixed(new_y)},{format_fixed(z)},"
+                    f"{Ljump:d},{Ldwell:d},{shortdt:.8e},{_P:.8e}\n"
                 )
                 move_mesh += 1
 
@@ -153,7 +161,8 @@ def parsingGcode(Nonmesh, Properties, L2h):
             if ((k + 1) * dt) > Nonmesh["dwell_time"]:
                 break
             toolpath.write(
-                f"{new_x:.8e},{new_y:.8e},{z:.8e},{Ljump:d},{Ldwell:d},{dt:.8e},{P:.8e}\n"
+                f"{format_fixed(new_x)},{format_fixed(new_y)},{format_fixed(z)},"
+                f"{Ljump:d},{Ldwell:d},{dt:.8e},{P:.8e}\n"
             )
             move_mesh += 1
         Ldwell = 0
@@ -162,13 +171,15 @@ def parsingGcode(Nonmesh, Properties, L2h):
         for k in range(dwell_t_steps):
             dt = Nonmesh["timestep_L3"] * dwell_t_coef
             toolpath.write(
-                f"{new_x:.8e},{new_y:.8e},{z:.8e},{Ljump:d},{Ldwell:d},{dt:.8e},{P:.8e}\n"
+                f"{format_fixed(new_x)},{format_fixed(new_y)},{format_fixed(z)},"
+                f"{Ljump:d},{Ldwell:d},{dt:.8e},{P:.8e}\n"
             )
             move_mesh += 1
         smalldt = _dwell_t - dwell_t_steps * Nonmesh["timestep_L3"] * dwell_t_coef
         if smalldt > 0:
             toolpath.write(
-                f"{new_x:.8e},{new_y:.8e},{z:.8e},{Ljump:d},{Ldwell:d},{smalldt:.8e},{P:.8e}\n"
+                f"{format_fixed(new_x)},{format_fixed(new_y)},{format_fixed(z)},"
+                f"{Ljump:d},{Ldwell:d},{smalldt:.8e},{P:.8e}\n"
             )
             move_mesh += 1
     return move_mesh
@@ -180,3 +191,8 @@ def count_lines(file_path):
         for line in file:
             line_count += 1
     return line_count
+
+
+def format_fixed(val, width=15, precision=8):
+    formatted = f"{val:.{precision}e}"
+    return formatted.rjust(width)
