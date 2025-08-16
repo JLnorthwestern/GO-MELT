@@ -46,12 +46,12 @@ Efficient part-scale thermal modeling of laser powder bed fusion via a multileve
 @article{elahi2025,
   title = {Efficient part-scale thermal modeling of laser powder bed fusion via a multilevel finite element framework},
   journal = {Additive Manufacturing},
-  volume = {},
-  pages = {},
-  year = {In press},
-  issn = {},
-  doi = {},
-  url = {},
+  volume = {109},
+  pages = {104897},
+  year = {2025},
+  issn = {2214-8604},
+  doi = {https://doi.org/10.1016/j.addma.2025.104897},
+  url = {https://www.sciencedirect.com/science/article/pii/S2214860425002611},
   author = {Mohammad Elahi and Joseph P. Leonor and Reese Y. Wu and Gregory J. Wagner},
   publisher = {Elsevier}
 }
