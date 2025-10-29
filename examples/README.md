@@ -81,13 +81,13 @@ Level3.elements: array of three integers — number of elements in x, y, z direc
 Level3.bounds.x / .y / .z: two floats — domain spatial bounds in each dimension (millimeters, mm)
 
 ## Properties
-thermal_conductivity_powder: float — powder thermal conductivity (W/mm·K)
+thermal_conductivity_powder: float — powder thermal conductivity (W/m·K)
 
-thermal_conductivity_bulk_a0: float — bulk conductivity coefficient a0 for linear T model (W/mm·K)
+thermal_conductivity_bulk_a0: float — bulk conductivity coefficient a0 for linear T model (W/m·K)
 
-thermal_conductivity_bulk_a1: float — bulk conductivity coefficient a1 for linear T model (W/mm·K²)
+thermal_conductivity_bulk_a1: float — bulk conductivity coefficient a1 for linear T model (W/m·K²)
 
-thermal_conductivity_fluid_a0: float — fluid thermal conductivity constant (W/mm·K)
+thermal_conductivity_fluid_a0: float — fluid thermal conductivity constant (W/m·K)
 
 heat_capacity_solid_a0: float — solid-phase heat capacity coefficient a0 for linear T model (J/kg·K)
 
