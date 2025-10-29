@@ -87,11 +87,11 @@
             0
         ],
         "thermal_conductivity_powder": 0.4,
-	"thermal_conductivity_bulk_a0": 4.23,
-	"thermal_conductivity_bulk_a1": 0.016,
-	"thermal_conductivity_fluid_a0": 29.0,
-	"heat_capacity_solid_a0": 383.1,
-	"heat_capacity_solid_a1": 0.174,
+	    "thermal_conductivity_bulk_a0": 4.23,
+	    "thermal_conductivity_bulk_a1": 0.016,
+	    "thermal_conductivity_fluid_a0": 29.0,
+	    "heat_capacity_solid_a0": 383.1,
+	    "heat_capacity_solid_a1": 0.174,
         "heat_capacity_mushy": 3235.0,
         "heat_capacity_fluid": 769.0,
         "density": 8e-06,
@@ -109,7 +109,7 @@
         "boltzmann_constant": 1.38e-23,
         "atomic_mass": 9.746e-26,
         "latent_heat_evap": 6457000.0,
-	"molar_mass": 58.69,
+	    "molar_mass": 58.69,
         "layer_height": 0.04
     },
     "nonmesh": {
