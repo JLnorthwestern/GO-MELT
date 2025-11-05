@@ -316,6 +316,7 @@ def SetupProperties(prop_obj):
 
     # --- Heat transfer and radiation ---
     properties.h_conv = prop_obj.get("h_conv", 1.473e-5)  # W/mm²·K
+    properties.h_conv *= 1e6 # Quick fix: later assumes in m for surface BC calc
     properties.vareps = prop_obj.get("emissivity", 0.600)  # unitless
     properties.evc = prop_obj.get("evaporation_coefficient", 0.82)  # unitless
 
