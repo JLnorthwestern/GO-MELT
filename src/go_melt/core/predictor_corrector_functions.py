@@ -1,21 +1,27 @@
 from functools import partial
 import jax
 import jax.numpy as jnp
-from go_melt.core.computeFunctions import (
+from go_melt.utils.interpolation_functions import interpolatePoints
+from .computeFunctions import (
     updateStateProperties,
-    computeConvRadBC,
-    computeCoarseTprimeTerm_jax,
-    computeSolutions,
-    getBothNewTprimes,
-    computeCoarseTprimeMassTerm_jax,
     computeStateProperties,
-    interpolatePoints,
     getOverlapRegion,
-    computeL1TprimeTerms_Part1,
+)
+from .boundary_condition_functions import (
+    computeConvRadBC,
+)
+from .solution_functions import (
     computeL1Temperature,
-    computeL2TprimeTerms_Part1,
     computeL2Temperature,
     computeSolutions_L3,
+    computeSolutions,
+)
+from .subgrid_term_functions import (
+    computeCoarseTprimeTerm_jax,
+    getBothNewTprimes,
+    computeCoarseTprimeMassTerm_jax,
+    computeL1TprimeTerms_Part1,
+    computeL2TprimeTerms_Part1,
     getNewTprime,
     computeL1TprimeTerms_Part2,
     computeL2TprimeTerms_Part2,

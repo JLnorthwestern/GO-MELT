@@ -7,10 +7,20 @@ import dill
 import jax
 import jax.numpy as jnp
 import numpy as np
-from go_melt.core.computeFunctions import *
-from go_melt.core.predictor_corrector_functions import stepGOMELT, subcycleGOMELT
-from .setup_dictionary_functions import SetupProperties, SetupLevels, SetupNonmesh
+from .computeFunctions import *
+from .predictor_corrector_functions import stepGOMELT, subcycleGOMELT
+from .setup_dictionary_functions import (
+    SetupProperties,
+    SetupLevels,
+    SetupNonmesh,
+    SetupStaticNodesAndElements,
+    SetupStaticSubcycle,
+)
+from .solution_functions import stepGOMELTDwellTime
+from .move_mesh_functions import moveEverything
 from go_melt.io.createPath import parsingGcode, count_lines
+from go_melt.io.save_results_functions import saveResults, saveState, saveResultsFinal
+from go_melt.utils.interpolation_functions import interpolatePointsMatrix
 import gc
 import json
 import copy
@@ -39,8 +49,8 @@ def go_melt(input_file: Path):
     # -------------------------------
     # Static Mesh Metadata
     # -------------------------------
-    ne_nn = getStaticNodesAndElements(Levels)
-    subcycle = getStaticSubcycle(Nonmesh)
+    ne_nn = SetupStaticNodesAndElements(Levels)
+    subcycle = SetupStaticSubcycle(Nonmesh)
 
     # -------------------------------
     # Mesh Ratios for Movement Logic

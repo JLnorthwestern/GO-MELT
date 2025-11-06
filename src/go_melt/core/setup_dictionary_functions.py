@@ -3,6 +3,8 @@ import os
 import jax.numpy as jnp
 import copy
 from .computeFunctions import *
+from .boundary_condition_functions import getBCindices
+from .move_mesh_functions import find_max_const
 
 
 class obj:
@@ -328,6 +330,54 @@ def SetupNonmesh(nonmesh_input):
         os.makedirs(Nonmesh.save_path)
 
     return structure_to_dict(Nonmesh)
+
+
+def SetupStaticNodesAndElements(L):
+    """
+    Extract static element and node counts from a list of level dictionaries.
+
+    Parameters:
+    L (list): A list of level dictionaries (e.g., from SetupLevels),
+              where each dictionary contains 'ne' (number of elements)
+              and 'nn' (number of nodes) as JAX arrays.
+
+    Returns:
+    tuple: A tuple containing:
+        - L[2]["ne"] as int
+        - L[3]["ne"] as int
+        - L[1]["nn"] as int
+        - L[2]["nn"] as int
+        - L[3]["nn"] as int
+    """
+    return (
+        L[2]["ne"].tolist(),
+        L[3]["ne"].tolist(),
+        L[1]["nn"].tolist(),
+        L[2]["nn"].tolist(),
+        L[3]["nn"].tolist(),
+    )
+
+
+def SetupStaticSubcycle(N):
+    """
+    Extract and compute subcycle values from the non-mesh configuration.
+
+    Parameters:
+    N (dict): Dictionary containing subcycle numbers for Level 2 and Level 3.
+
+    Returns:
+    tuple: A tuple containing:
+        - N2 (int): Subcycle count for Level 2
+        - N3 (int): Subcycle count for Level 3
+        - N23 (int): Total subcycles (N2 * N3)
+        - fN2 (float): N2 as float
+        - fN3 (float): N3 as float
+        - fN23 (float): N23 as float
+    """
+    N2, N3 = N["subcycle_num_L2"], N["subcycle_num_L3"]
+    N23 = N2 * N3
+    fN2, fN3, fN23 = float(N2), float(N3), float(N23)
+    return (N2, N3, N23, fN2, fN3, fN23)
 
 
 def dict2obj(dict1):

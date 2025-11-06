@@ -2,7 +2,12 @@ from functools import partial
 import jax
 import jax.numpy as jnp
 from .computeFunctions import *
-from go_melt.utils.gaussian_quadrature import getQuadratureCoords
+from jax.numpy import multiply
+from go_melt.utils.gaussian_quadrature_functions import (
+    getQuadratureCoords,
+    computeQuad3dFemShapeFunctions_jax,
+)
+from go_melt.utils.helper_functions import convert2XYZ
 
 
 @partial(jax.jit, static_argnames=["ne_nn"])
