@@ -7,18 +7,21 @@ import dill
 import jax
 import jax.numpy as jnp
 import numpy as np
-from computeFunctions import *
-from createPath import parsingGcode, count_lines
+from go_melt.core.computeFunctions import *
+from go_melt.io.createPath import parsingGcode, count_lines
 import gc
 import json
 
 
-def go_melt(solver_input: dict):
+def go_melt(input_file: Path):
     """
     Main GO-MELT simulation driver. This function initializes the simulation,
     sets up all levels, properties, and toolpath data, and prepares for time stepping.
     Thermal solves using the GO-MELT algorithm are then used.
     """
+    with open(input_file, "r") as read_file:
+        solver_input = json.load(read_file)
+
     tstart = time.time()  # Start timer
 
     level_names = ["L1", "L2", "L3"]
@@ -528,53 +531,3 @@ def go_melt(solver_input: dict):
         print("Cleared some cache")
 
     print("End of simulation")
-
-
-if __name__ == "__main__":
-    # Clear terminal for clean output
-    os.system("clear")
-
-    # -------------------------------
-    # Parse Command-Line Arguments
-    # -------------------------------
-    # Usage: python3 run_go_melt.py DEVICE_ID input_file
-    DEVICE_ID = int(sys.argv[1]) if len(sys.argv) > 1 and sys.argv[1].isdigit() else 0
-    input_file = sys.argv[2] if len(sys.argv) > 2 else "examples/example.json"
-
-    if len(sys.argv) <= 1:
-        print("GPU ID not provided. Setting GPU to 0.")
-    if len(sys.argv) <= 2:
-        print("Input file not provided. Using default: 'examples/example.json'.")
-
-    # -------------------------------
-    # Set Environment for JAX
-    # -------------------------------
-    os.environ["CUDA_DEVICE_ORDER"] = "PCI_BUS_ID"
-    os.environ["XLA_PYTHON_CLIENT_PREALLOCATE"] = "false"
-
-    try:
-        # Attempt to assign GPU
-        os.environ["CUDA_VISIBLE_DEVICES"] = str(DEVICE_ID)
-    except:
-        # Fallback to CPU if GPU assignment fails
-        import jax
-
-        jax.config.update("jax_platform_name", "cpu")
-        print("No GPU found. Running on CPU.")
-
-    # -------------------------------
-    # Load Input File
-    # -------------------------------
-    try:
-        with open(input_file, "r") as read_file:
-            solver_input = json.load(read_file)
-    except FileNotFoundError:
-        print(f"Error: Input file '{input_file}' not found.")
-        sys.exit(1)
-
-    # -------------------------------
-    # Launch GO-MELT Simulation
-    # -------------------------------
-    print("Running GO-MELT")
-    print(f"GPU: {DEVICE_ID}, Input File: {input_file}")
-    go_melt(solver_input)
