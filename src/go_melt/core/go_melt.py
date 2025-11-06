@@ -8,9 +8,12 @@ import jax
 import jax.numpy as jnp
 import numpy as np
 from go_melt.core.computeFunctions import *
+from go_melt.core.predictor_corrector_functions import stepGOMELT, subcycleGOMELT
+from .setup_dictionary_functions import SetupProperties, SetupLevels, SetupNonmesh
 from go_melt.io.createPath import parsingGcode, count_lines
 import gc
 import json
+import copy
 
 
 def go_melt(input_file: Path):
