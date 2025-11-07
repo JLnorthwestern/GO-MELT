@@ -7,9 +7,10 @@ from go_melt.utils.interpolation_functions import (
 from go_melt.utils.gaussian_quadrature_functions import (
     computeQuad3dFemShapeFunctions_jax,
 )
-from .computeFunctions import *
+from .mesh_functions import getSampleCoords
 from .boundary_condition_functions import computeConvRadBC, assignBCs, assignBCsFine
-from go_melt.utils.helper_functions import convert2XYZ
+from go_melt.utils.helper_functions import convert2XYZ, substitute_Tbar
+from .phase_state_functions import computeStateProperties
 
 
 @partial(jax.jit, static_argnames=["ne_nn", "tmp_ne_nn", "substrate"])

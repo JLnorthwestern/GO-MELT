@@ -1,5 +1,6 @@
 import numpy as np
 from pyevtk.hl import gridToVTK
+import dill
 
 
 def saveResult(Level, save_str, record_lab, save_path, zoffset):
@@ -143,3 +144,17 @@ def saveState(Level, save_str, record_lab, save_path, zoffset):
     pointData = {"State (Powder/Solid)": vtkS}
     vtkSave = f"{save_path}{save_str}{record_lab:08}"
     gridToVTK(vtkSave, vtkcx, vtkcy, vtkcz, pointData=pointData)
+
+
+def save_object(obj, filename):
+    """
+    Save a Python object to a file using the dill serialization library.
+
+    This function overwrites any existing file with the same name.
+
+    Parameters:
+    obj (any): The Python object to serialize and save.
+    filename (str): The path to the file where the object will be saved.
+    """
+    with open(filename, "wb") as outp:
+        dill.dump(obj, outp, dill.HIGHEST_PROTOCOL)

@@ -2,14 +2,19 @@ from jax.numpy import multiply
 import jax.numpy as jnp
 import jax
 from functools import partial
-from .computeFunctions import *
+from .mesh_functions import getSampleCoords
 from go_melt.utils.gaussian_quadrature_functions import (
     computeQuad3dFemShapeFunctions_jax,
 )
 from go_melt.utils.helper_functions import (
     convert2XYZ,
+    substitute_Tbar2,
+    getOverlapRegion,
 )
-from go_melt.utils.interpolation_functions import interpolate_w_matrix
+from go_melt.utils.interpolation_functions import (
+    interpolate_w_matrix,
+    interpolatePoints,
+)
 
 
 @jax.jit

@@ -2,9 +2,14 @@ import json
 import os
 import jax.numpy as jnp
 import copy
-from .computeFunctions import *
 from .boundary_condition_functions import getBCindices
 from .move_mesh_functions import find_max_const
+from .mesh_functions import calc_length_h, calcNumNodes, createMesh3D
+from go_melt.utils.helper_functions import (
+    getCoarseNodesInLargeFineRegion,
+    getCoarseNodesInFineRegion,
+    getOverlapRegion,
+)
 
 
 class obj:
@@ -419,3 +424,28 @@ def structure_to_dict(struct):
         )
         for k, v in struct.__dict__.items()
     }
+
+
+def calcStaticTmpNodesAndElements(L, v):
+    """
+    Calculate temporary element and node counts in Level 1 up to a given z-value.
+
+    Parameters:
+    L (list): List of level dictionaries (e.g., from SetupLevels).
+    v (list or array): A 3D coordinate [x, y, z] used to filter nodes by z-value.
+
+    Returns:
+    tuple:
+        tmp_ne (int): Estimated number of elements below or at z = v[2].
+        tmp_nn (int): Estimated number of nodes below or at z = v[2].
+    """
+    # Mask for nodes in Level 1 where z <= v[2] + tolerance
+    Level1_mask = L[1]["node_coords"][2] <= v[2] + 1e-5
+    Level1_nn = sum(Level1_mask)
+
+    # Calculate temporary number of elements and nodes
+    tmp_ne = L[1]["elements"][0] * L[1]["elements"][1] * (Level1_nn - 1)
+    tmp_ne = tmp_ne.tolist()
+    tmp_nn = (L[1]["nodes"][0] * L[1]["nodes"][1] * Level1_nn).tolist()
+
+    return (tmp_ne, tmp_nn)

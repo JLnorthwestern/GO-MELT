@@ -2,11 +2,8 @@ from functools import partial
 import jax
 import jax.numpy as jnp
 from go_melt.utils.interpolation_functions import interpolatePoints
-from .computeFunctions import (
-    updateStateProperties,
-    computeStateProperties,
-    getOverlapRegion,
-)
+from go_melt.utils.helper_functions import getOverlapRegion
+from .phase_state_functions import updateStateProperties, computeStateProperties
 from .boundary_condition_functions import (
     computeConvRadBC,
 )

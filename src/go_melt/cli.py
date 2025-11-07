@@ -75,12 +75,9 @@ def run_package(config_path: str | None):
         from go_melt.core.go_melt import (
             go_melt as package_run,
         )  # former script -> function
-    except Exception:
-        try:
-            from go_melt import main as package_run
-        except Exception as exc:
-            logger.exception("Could not import package run entrypoint: %s", exc)
-            raise SystemExit(1)
+    except Exception as exc:
+        logger.exception("Could not import package run entrypoint: %s", exc)
+        raise SystemExit(1)
     # call the package run function; prefer signature run(config_path)
     if config_path is None:
         logger.info("No config path provided; calling run() without args")

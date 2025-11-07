@@ -5,7 +5,7 @@ from go_melt.utils.interpolation_functions import (
     interpolatePointsMatrix,
 )
 from go_melt.utils.shape_functions import computeCoarseFineShapeFunctions
-from .computeFunctions import getOverlapRegion
+from go_melt.utils.helper_functions import getOverlapRegion
 
 
 @jax.jit

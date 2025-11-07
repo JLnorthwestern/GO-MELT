@@ -1,29 +1,43 @@
+# stdlib
+import copy
+import gc
+import json
 import os
-import sys
 import time
 from pathlib import Path
 
+
+# third-party (lightweight at import time)
 import dill
-import jax
 import jax.numpy as jnp
 import numpy as np
-from .computeFunctions import *
-from .predictor_corrector_functions import stepGOMELT, subcycleGOMELT
+
+# local package: grouped by subsystem, use module aliases when helpful
 from .setup_dictionary_functions import (
-    SetupProperties,
     SetupLevels,
     SetupNonmesh,
+    SetupProperties,
     SetupStaticNodesAndElements,
     SetupStaticSubcycle,
+    calcStaticTmpNodesAndElements,
 )
-from .solution_functions import stepGOMELTDwellTime
+from .mesh_functions import getSubstrateNodes
 from .move_mesh_functions import moveEverything
-from go_melt.io.createPath import parsingGcode, count_lines
-from go_melt.io.save_results_functions import saveResults, saveState, saveResultsFinal
-from go_melt.utils.interpolation_functions import interpolatePointsMatrix
-import gc
-import json
-import copy
+from .predictor_corrector_functions import stepGOMELT, subcycleGOMELT
+from .solution_functions import stepGOMELTDwellTime
+from go_melt.utils.helper_functions import melting_temp
+from go_melt.utils.interpolation_functions import (
+    interpolatePoints,
+    interpolatePointsMatrix,
+)
+from go_melt.io.createPath import count_lines, parsingGcode
+from go_melt.io.print_functions import printLevelMaxMin
+from go_melt.io.save_results_functions import (
+    saveState,
+    saveResults,
+    saveResultsFinal,
+    save_object,
+)
 
 
 def go_melt(input_file: Path):
@@ -32,6 +46,7 @@ def go_melt(input_file: Path):
     sets up all levels, properties, and toolpath data, and prepares for time stepping.
     Thermal solves using the GO-MELT algorithm are then used.
     """
+
     with open(input_file, "r") as read_file:
         solver_input = json.load(read_file)
 
