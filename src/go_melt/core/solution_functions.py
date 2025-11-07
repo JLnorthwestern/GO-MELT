@@ -9,7 +9,7 @@ from go_melt.utils.gaussian_quadrature_functions import (
 )
 from .mesh_functions import getSampleCoords
 from .boundary_condition_functions import computeConvRadBC, assignBCs, assignBCsFine
-from go_melt.utils.helper_functions import convert2XYZ, substitute_Tbar
+from go_melt.utils.helper_functions import convert2XYZ, static_set_in_array
 from .phase_state_functions import computeStateProperties
 
 
@@ -55,7 +55,7 @@ def stepGOMELTDwellTime(Levels, tmp_ne_nn, ne_nn, properties, dt, substrate):
     )
 
     # Enforce ambient temperature in inactive region above surface
-    T_new = substitute_Tbar(T_new, inactive_start_idx, properties["T_amb"])
+    T_new = static_set_in_array(T_new, inactive_start_idx, properties["T_amb"])
 
     # Apply boundary conditions and update Level 1 temperature
     Levels[1]["T0"] = assignBCs(T_new, Levels)
@@ -99,7 +99,7 @@ def computeL1Temperature(
     )
 
     # Apply ambient temperature to inactive region above surface
-    L1T = substitute_Tbar(L1T, tmp_ne_nn[1], properties["T_amb"])
+    L1T = static_set_in_array(L1T, tmp_ne_nn[1], properties["T_amb"])
 
     # Enforce Dirichlet boundary conditions
     FinalL1 = assignBCs(L1T, Levels)
@@ -240,7 +240,7 @@ def computeSolutions(
         LF[1],
         L1V,
     )
-    L1T = substitute_Tbar(L1T, tmp_ne_nn[1], properties["T_amb"])
+    L1T = static_set_in_array(L1T, tmp_ne_nn[1], properties["T_amb"])
     FinalL1 = assignBCs(L1T, Levels)
 
     # Interpolate Level 1 solution to Level 2 for source term

@@ -8,7 +8,7 @@ from go_melt.utils.gaussian_quadrature_functions import (
 )
 from go_melt.utils.helper_functions import (
     convert2XYZ,
-    substitute_Tbar2,
+    set_in_array,
     getOverlapRegion,
 )
 from go_melt.utils.interpolation_functions import (
@@ -496,7 +496,7 @@ def getNewTprime(Fine, FineT0, CoarseT, Coarse, C2F):
     )
 
     # Update coarse temperature at overlap region
-    CoarseT = substitute_Tbar2(CoarseT, _idx, _val)
+    CoarseT = set_in_array(CoarseT, _idx, _val)
 
     # Compute residual between fine and interpolated coarse temperature
     Tprime = FineT0 - interpolate_w_matrix(C2F, CoarseT)

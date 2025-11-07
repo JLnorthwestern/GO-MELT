@@ -2,40 +2,37 @@ import jax
 import jax.numpy as jnp
 from functools import partial
 import numpy as np
+from typing import Tuple, List
 
 
 @jax.jit
-def convert2XYZ(i, ne_x, ne_y, nn_x, nn_y):
+def convert2XYZ(
+    elem_index: int,
+    num_elems_x: int,
+    num_elems_y: int,
+    num_nodes_x: int,
+    num_nodes_y: int,
+) -> Tuple[int, int, int, jnp.ndarray]:
     """
-    Compute local element indices and global node connectivity in 3D.
-
-    Parameters:
-    i (int): Element index (flattened).
-    ne_x (int): Number of elements in the x-direction.
-    ne_y (int): Number of elements in the y-direction.
-    nn_x (int): Number of nodes in the x-direction.
-    nn_y (int): Number of nodes in the y-direction.
-
-    Returns:
-    tuple:
-        ix (int): Element index in x-direction.
-        iy (int): Element index in y-direction.
-        iz (int): Element index in z-direction.
-        idx (jnp.ndarray): Global node indices for the 8-node hexahedral element.
+    Compute element indices (used to determine which connectivity row) and global node
+    indices for an 8-node hexahedron.
     """
-    ne_xy = ne_x * ne_y
-    nn_xy = nn_x * nn_y
 
-    iz = i // ne_xy
-    iy = (i // ne_x) - iz * ne_y
-    ix = i % ne_x
+    num_elems_xy = num_elems_x * num_elems_y
+    num_nodes_xy = num_nodes_x * num_nodes_y
 
-    base = ix + iy * nn_x + iz * nn_xy
+    elem_index_z = elem_index // num_elems_xy
+    elem_index_y = (elem_index // num_elems_x) - elem_index_z * num_elems_y
+    elem_index_x = elem_index % num_elems_x
+
+    # base: global node index for the element's (0,0,0) corner
+    base = elem_index_x + elem_index_y * num_nodes_x + elem_index_z * num_nodes_xy
     dx = 1
-    dy = nn_x
-    dz = nn_xy
+    dy = num_nodes_x
+    dz = num_nodes_xy
 
-    idx = jnp.array(
+    # global_indices: global indices for the 8 nodes of the hexahedral element
+    global_indices = jnp.array(
         [
             base,
             base + dx,
@@ -48,92 +45,67 @@ def convert2XYZ(i, ne_x, ne_y, nn_x, nn_y):
         ]
     )
 
-    return ix, iy, iz, idx
+    return elem_index_x, elem_index_y, elem_index_z, global_indices
 
 
-@partial(jax.jit, static_argnames=["nn"])
-def bincount(N, D, nn):
+@partial(jax.jit, static_argnames=["total_node_num"])
+def bincount(
+    node_indices: jnp.ndarray, values: jnp.ndarray, total_node_num: int
+) -> jnp.ndarray:
+    """Static bincount function call"""
+    return jnp.bincount(node_indices, values, length=total_node_num)
+
+
+def getCoarseNodesInLargeFineRegion(
+    coarse_coords: jnp.ndarray, fine_coords: jnp.ndarray
+) -> jnp.ndarray:
     """
-    Perform a weighted bin count operation.
-
-    This function accumulates values from `D` into bins specified by `N`,
-    producing a 1D array of length `nn`.
-
-    Parameters:
-    N (array): Bin indices (integer array).
-    D (array): Values to accumulate (same shape as N).
-    nn (int): Total number of bins (output length).
-
-    Returns:
-    array: Binned sum of values, shape (nn,).
-    """
-    return jnp.bincount(N, D, length=nn)
-
-
-def getCoarseNodesInLargeFineRegion(xnc, xnf):
-    """
-    Identify fine grid indices that correspond to coarse grid nodes
+    Identify fine grid indices (1D) that correspond to coarse grid nodes
     when the fine grid spans a larger domain than the coarse grid.
 
-    This function computes the indices of fine grid nodes that align
-    with the coarse grid node positions, assuming both grids are
-    uniformly spaced.
-
-    Parameters:
-    xnc (array): Coordinates of the coarse grid nodes.
-    xnf (array): Coordinates of the fine grid nodes.
-
-    Returns:
-    array: Indices of fine grid nodes that align with coarse grid nodes.
+    Both grids are assumed uniformly spaced.
     """
-    xfmin = xnf.min()
-    xfmax = xnf.max()
-    xcmin = xnc.min()
-    xcmax = xnc.max()
+    fine_min = fine_coords.min()
+    fine_max = fine_coords.max()
+    coarse_min = coarse_coords.min()
+    coarse_max = coarse_coords.max()
 
-    nnf = xnf.size
-    nef = nnf - 1
-    hf = (xfmax - xfmin) / nef
+    num_fine_nodes = fine_coords.size
+    num_fine_elems = num_fine_nodes - 1
+    fine_elem_size = (fine_max - fine_min) / num_fine_elems
 
-    nnc = xnc.size
-    nec = nnc - 1
-    hc = (xcmax - xcmin) / nec
+    num_coarse_nodes = coarse_coords.size
+    num_coarse_elems = num_coarse_nodes - 1
+    coarse_elem_size = (coarse_max - coarse_min) / num_coarse_elems
 
-    overlapMin = jnp.round((xcmin - xfmin) / hf)
-    overlapMax = jnp.round((xcmax - xfmin) / hf) + 1
+    overlapMin = jnp.round((coarse_min - fine_min) / fine_elem_size)
+    overlapMax = jnp.round((coarse_max - fine_min) / fine_elem_size) + 1
 
-    step = int(jnp.round(hc / hf))
+    step = int(jnp.round(coarse_elem_size / fine_elem_size))
     overlap = jnp.arange(overlapMin, overlapMax, step).astype(int)
 
     return overlap
 
 
-def getCoarseNodesInFineRegion(xnf, xnc):
+def getCoarseNodesInFineRegion(
+    fine_coords: jnp.ndarray, coarse_coords: jnp.ndarray
+) -> jnp.ndarray:
     """
-    Identify coarse grid nodes that overlap with the fine grid region.
+    Identify coarse-grid node indices (1D) that fall inside the fine-grid extent.
 
-    This function determines which coarse grid nodes fall within the
-    spatial extent of a given fine grid. It assumes uniform spacing
-    in the coarse grid.
-
-    Parameters:
-    xnf (array): Coordinates of the fine grid nodes.
-    xnc (array): Coordinates of the coarse grid nodes.
-
-    Returns:
-    array: Indices of coarse grid nodes that overlap with the fine grid.
+    Both grids are assumed uniformly spaced.
     """
-    xfmin = xnf.min()
-    xfmax = xnf.max()
-    xcmin = xnc.min()
-    xcmax = xnc.max()
+    fine_min = fine_coords.min()
+    fine_max = fine_coords.max()
+    coarse_min = coarse_coords.min()
+    coarse_max = coarse_coords.max()
 
-    nnc = xnc.size
-    nec = nnc - 1
-    hc = (xcmax - xcmin) / nec
+    num_coarse_nodes = coarse_coords.size
+    num_coarse_elems = num_coarse_nodes - 1
+    coarse_elem_size = (coarse_max - coarse_min) / num_coarse_elems
 
-    overlapMin = jnp.round((xfmin - xcmin) / hc)
-    overlapMax = jnp.round((xfmax - xcmin) / hc) + 1
+    overlapMin = jnp.round((fine_min - coarse_min) / coarse_elem_size)
+    overlapMax = jnp.round((fine_max - coarse_min) / coarse_elem_size) + 1
 
     overlap = jnp.arange(overlapMin, overlapMax).astype(int)
 
@@ -141,86 +113,61 @@ def getCoarseNodesInFineRegion(xnf, xnc):
 
 
 @jax.jit
-def getOverlapRegion(node_coords, nx, ny):
+def getOverlapRegion(
+    node_indices: List[jnp.ndarray], num_nodes_x: int, num_nodes_y: int
+) -> jnp.ndarray:
     """
     Compute flattened global node indices for a structured 3D grid.
 
     This function generates a 1D array of global node indices based on
     the Cartesian product of x, y, and z coordinate arrays. It assumes
-    a structured grid with dimensions (nx, ny, nz).
-
-    Parameters:
-    node_coords (list): List of 1D arrays [x, y, z] representing node coordinates.
-    nx (int): Number of nodes in the x-direction.
-    ny (int): Number of nodes in the y-direction.
-
-    Returns:
-    array: Flattened global node indices corresponding to the overlap region.
+    a structured grid with dimensions (num_nodes_x, num_nodes_y, num_nodes_z).
     """
-    _x = jnp.tile(
-        node_coords[0], node_coords[1].shape[0] * node_coords[2].shape[0]
+    x_index = jnp.tile(
+        node_indices[0], node_indices[1].shape[0] * node_indices[2].shape[0]
     ).reshape(-1)
 
-    _y = jnp.repeat(
-        jnp.tile(node_coords[1], node_coords[2].shape[0]), node_coords[0].shape[0]
+    y_index = jnp.repeat(
+        jnp.tile(node_indices[1], node_indices[2].shape[0]), node_indices[0].shape[0]
     ).reshape(-1)
 
-    _z = jnp.repeat(node_coords[2], node_coords[0].shape[0] * node_coords[1].shape[0])
+    z_index = jnp.repeat(
+        node_indices[2], node_indices[0].shape[0] * node_indices[1].shape[0]
+    )
 
-    return _x + _y * nx + _z * nx * ny
+    return x_index + y_index * num_nodes_x + z_index * num_nodes_x * num_nodes_y
 
 
-@partial(jax.jit, static_argnames=["_idx"])
-def substitute_Tbar(Tbar, _idx, _val):
+@partial(jax.jit, static_argnames=["index"])
+def static_set_in_array(
+    input_array: jnp.ndarray, index: int, values: jnp.ndarray
+) -> jnp.ndarray:
     """
-    Replace a slice of the Tbar array starting at a given index with a new value.
+    Replace a slice of the input_array array starting at a given index with new values.
 
-    This function sets all elements from index `_idx` to the end of the array
-    to the value `_val`. The index and value are treated as static arguments
-    for JAX compilation efficiency.
-
-    Parameters:
-    Tbar (array): Input array to be modified.
-    _idx (int): Starting index for substitution.
-    _val (float or array): Value(s) to assign from _idx onward.
-
-    Returns:
-    array: Modified Tbar array with values substituted from _idx onward.
+    The index is treated as static arguments for JAX compilation efficiency.
     """
-    return Tbar.at[_idx:].set(_val)
+    return input_array.at[index:].set(values)
 
 
 @jax.jit
-def substitute_Tbar2(Tbar, _idx, _val):
+def set_in_array(input_array: jnp.ndarray, indices: jnp.ndarray, values: jnp.ndarray):
     """
-    Replace a single element in the Tbar array at a given index.
-
-    This function sets the element at index `_idx` to `_val`.
-
-    Parameters:
-    Tbar (array): Input array to be modified.
-    _idx (int): Index of the element to be replaced.
-    _val (float): New value to assign at the specified index.
-
-    Returns:
-    array: Modified Tbar array with the specified element updated.
+    Replace a slice of the input_array array with new values.
     """
-    return Tbar.at[_idx].set(_val)
+    return input_array.at[indices].set(values)
 
 
-def melting_temp(temps, delt_T, T_melt, accum_time, idx):
-    """
-    Update accumulated melt time for nodes above melting temperature.
+def melting_temp(
+    temps: np.ndarray,
+    delt_T: float,
+    T_melt: float,
+    accum_time: jnp.ndarray,
+    idx: jnp.ndarray,
+) -> jnp.ndarray:
+    """Add delt_T to accum_time at indices where temps exceed T_melt.
 
-    Parameters:
-    temps (array): Current temperature field.
-    delt_T (float): Time step duration.
-    T_melt (float): Melting temperature threshold.
-    accum_time (array): Accumulated melt time array.
-    idx (array): Indices of nodes to update.
-
-    Returns:
-    array: Updated accumulated melt time.
+    temps is a NumPy array mask; accum_time is a JAX array updated functionally.
     """
     T_above_threshold = np.array(temps > T_melt)
     accum_time = accum_time.at[idx].add(T_above_threshold * delt_T)

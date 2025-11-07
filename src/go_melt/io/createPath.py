@@ -1,6 +1,5 @@
 import re
 import numpy as np
-from go_melt.core.computeFunctions import *
 
 
 def parsingGcode(Nonmesh, Properties, L2h):
