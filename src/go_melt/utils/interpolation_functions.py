@@ -5,7 +5,11 @@ from .shape_functions import compute3DN
 
 
 @jax.jit
-def interpolatePoints(Level, u, node_coords_new):
+def interpolatePoints(
+    Level: dict[str, list[jnp.ndarray]],
+    u: jnp.ndarray,
+    node_coords_new: list[jnp.ndarray],
+) -> jnp.ndarray:
     """
     Interpolate a scalar field from a structured mesh to new coordinates.
 

@@ -28,6 +28,14 @@ def test_compute3DN_unit_box_center_and_corners():
     assert np.isclose(N_corner[0], 1.0)
     assert np.allclose(N_corner[1:], np.zeros(7), atol=1e-12)
 
+    # Corner at (0,0,0) should give N[0] = 1 and others 0
+    q_interior = [0.68, 0.68, 0.34]
+    N_interior = np.asarray(compute3DN(q_interior, x, y, z, h))
+    u_interior = np.array(
+        [0.067584, 0.143616, 0.305184, 0.143616, 0.034816, 0.073984, 0.157216, 0.073984]
+    )
+    assert np.allclose(N_interior, u_interior)
+
     # Opposite corner at (1,1,1) should give N[6] = 1 (ordering follows provided compute3DN)
     q_opposite = [1.0, 1.0, 1.0]
     N_opp = np.asarray(compute3DN(q_opposite, x, y, z, h))

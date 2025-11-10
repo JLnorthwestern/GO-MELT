@@ -1,37 +1,36 @@
 import jax.numpy as jnp
 import jax
 from jax.experimental import sparse
+from jax.experimental.sparse import BCOO
+from typing import List, Dict, Tuple, Union
 from .gaussian_quadrature_functions import computeQuad3dFemShapeFunctions_jax
 from .helper_functions import convert2XYZ
 
 
-def compute3DN(q, x, y, z, h):
+def compute3DN(
+    test_pt: Union[List[float], jnp.ndarray],
+    x_lims: Union[List[float], jnp.ndarray],
+    y_lims: Union[List[float], jnp.ndarray],
+    z_lims: Union[List[float], jnp.ndarray],
+    elem_sizes: Union[List[float], jnp.ndarray],
+) -> jnp.ndarray:
     """
     Compute trilinear shape functions for a hexahedral element at a given point.
-
-    Parameters:
-    q (list or array): Evaluation point [xq, yq, zq].
-    x (list): x-coordinates of the element's bounding box [x0, x1].
-    y (list): y-coordinates of the element's bounding box [y0, y1].
-    z (list): z-coordinates of the element's bounding box [z0, z1].
-    h (list): Element sizes in x, y, z directions [hx, hy, hz].
-
-    Returns:
-    array: Shape function values at point q, shape (8,).
     """
-    inv_vol = 1.0 / (h[0] * h[1] * h[2])
+    inv_vol = 1.0 / (elem_sizes[0] * elem_sizes[1] * elem_sizes[2])
 
+    x, y, z = test_pt
     N = (
         jnp.array(
             [
-                (x[1] - q[0]) * (y[1] - q[1]) * (z[1] - q[2]),
-                (q[0] - x[0]) * (y[1] - q[1]) * (z[1] - q[2]),
-                (q[0] - x[0]) * (q[1] - y[0]) * (z[1] - q[2]),
-                (x[1] - q[0]) * (q[1] - y[0]) * (z[1] - q[2]),
-                (x[1] - q[0]) * (y[1] - q[1]) * (q[2] - z[0]),
-                (q[0] - x[0]) * (y[1] - q[1]) * (q[2] - z[0]),
-                (q[0] - x[0]) * (q[1] - y[0]) * (q[2] - z[0]),
-                (x[1] - q[0]) * (q[1] - y[0]) * (q[2] - z[0]),
+                (x_lims[1] - x) * (y_lims[1] - y) * (z_lims[1] - z),
+                (x - x_lims[0]) * (y_lims[1] - y) * (z_lims[1] - z),
+                (x - x_lims[0]) * (y - y_lims[0]) * (z_lims[1] - z),
+                (x_lims[1] - x) * (y - y_lims[0]) * (z_lims[1] - z),
+                (x_lims[1] - x) * (y_lims[1] - y) * (z - z_lims[0]),
+                (x - x_lims[0]) * (y_lims[1] - y) * (z - z_lims[0]),
+                (x - x_lims[0]) * (y - y_lims[0]) * (z - z_lims[0]),
+                (x_lims[1] - x) * (y - y_lims[0]) * (z - z_lims[0]),
             ]
         )
         * inv_vol
@@ -41,25 +40,13 @@ def compute3DN(q, x, y, z, h):
 
 
 @jax.jit
-def computeCoarseFineShapeFunctions(Coarse, Fine):
+def computeCoarseFineShapeFunctions(
+    Coarse: Dict[str, List[jnp.ndarray]],
+    Fine: Dict[str, List[jnp.ndarray]],
+) -> Tuple[jnp.ndarray, List[jnp.ndarray], BCOO]:
     """
     Compute coarse shape functions and their derivatives at fine-scale
     quadrature points, and return a sparse projection matrix.
-
-    Parameters:
-    Coarse (dict): Coarse mesh data.
-                   - "node_coords": list of 1D arrays for x, y, z coordinates.
-                   - "connect": list of connectivity arrays in x, y, z.
-    Fine (dict): Fine mesh data.
-                 - "node_coords": list of 1D arrays for x, y, z coordinates.
-                 - "connect": list of connectivity arrays in x, y, z.
-
-    Returns:
-    Nc (array): Coarse shape functions at fine quadrature points,
-                shape (n_fine_elem, 8, 8).
-    dNcdx, dNcdy, dNcdz (arrays): Derivatives of coarse shape functions,
-                                  each of shape (n_fine_elem, 8, 8).
-    test (BCOO): Sparse projection matrix from coarse nodes to fine quadrature.
     """
     # Mesh sizes
     nec_x, nec_y, nec_z = [Coarse["connect"][i].shape[0] for i in range(3)]
@@ -87,7 +74,9 @@ def computeCoarseFineShapeFunctions(Coarse, Fine):
     )
     Nf, _, _ = computeQuad3dFemShapeFunctions_jax(coords)
 
-    def stepComputeCoarseFineTerm(ieltf):
+    def stepComputeCoarseFineTerm(
+        ieltf: int,
+    ) -> Tuple[jnp.ndarray, jnp.ndarray, jnp.ndarray, jnp.ndarray, jnp.ndarray]:
         ix, iy, iz, _ = convert2XYZ(ieltf, nef_x, nef_y, nnf_x, nnf_y)
         coords_x = Fine["node_coords"][0][Fine["connect"][0][ix, :]].reshape(-1, 1)
         coords_y = Fine["node_coords"][1][Fine["connect"][1][iy, :]].reshape(-1, 1)
@@ -102,7 +91,9 @@ def computeCoarseFineShapeFunctions(Coarse, Fine):
         ieltc_y = jnp.clip(jnp.floor((y - xminc_y) / hc_y).astype(int), 0, nec_y - 1)
         ieltc_z = jnp.clip(jnp.floor((z - xminc_z) / hc_z).astype(int), 0, nec_z - 1)
 
-        def iqLoop(iq):
+        def iqLoop(
+            iq: int,
+        ) -> Tuple[jnp.ndarray, jnp.ndarray, jnp.ndarray, jnp.ndarray, jnp.ndarray]:
             # Coarse element node indices
             nodec_x = Coarse["connect"][0][ieltc_x[iq], :]
             nodec_y = Coarse["connect"][1][ieltc_y[iq], :]
@@ -181,8 +172,9 @@ def computeCoarseFineShapeFunctions(Coarse, Fine):
     _nodes = _nodes[:, 0, :]  # Only need one set of node indices per element
 
     # Construct sparse projection matrix
+    # First column represents coarse node indices, second is fine node indices
     indices = jnp.stack([_nodes.reshape(-1), jnp.arange(_nodes.size)], axis=1)
-    test = jax.experimental.sparse.BCOO(
+    summation_operator = jax.experimental.sparse.BCOO(
         (jnp.ones(_nodes.size), indices), shape=(nnc, _nodes.size)
     )
-    return [Nc, [dNcdx, dNcdy, dNcdz], test]
+    return [Nc, [dNcdx, dNcdy, dNcdz], summation_operator]
