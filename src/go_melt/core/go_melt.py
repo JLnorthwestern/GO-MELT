@@ -30,7 +30,7 @@ from go_melt.utils.interpolation_functions import (
     interpolatePoints,
     interpolatePointsMatrix,
 )
-from go_melt.io.createPath import count_lines, parsingGcode
+from go_melt.io.toolpath_functions import count_lines, parsingGcode
 from go_melt.io.print_functions import printLevelMaxMin
 from go_melt.io.save_results_functions import (
     saveState,
