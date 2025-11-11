@@ -14,9 +14,6 @@ from .solution_functions import (
     computeSolutions,
 )
 from .subgrid_term_functions import (
-    computeCoarseTprimeTerm_jax,
-    getBothNewTprimes,
-    computeCoarseTprimeMassTerm_jax,
     computeL1TprimeTerms_Part1,
     computeL2TprimeTerms_Part1,
     getNewTprime,
@@ -78,7 +75,9 @@ def stepGOMELT(
     F = [0, Fc, Fm, Ff]  # Source terms for Levels 1–3
 
     # --- Predictor step ---
-    Vcu, Vmu = computeCoarseTprimeTerm_jax(Levels, Lk[3], Lk[2], Shapes)
+    Vcu = computeL1TprimeTerms_Part1(Levels, ne_nn, Lk[3], Shapes, Lk[2])
+    Vmu = computeL2TprimeTerms_Part1(Levels, ne_nn, Levels[3]["Tprime0"], Lk[3], Shapes)
+
     L1T, L2T, L3T = computeSolutions(
         Levels, ne_nn, tmp_ne_nn, F, Vcu, LInterp, Lk, Lrhocp, Vmu, dt, properties
     )
@@ -89,13 +88,17 @@ def stepGOMELT(
     L3T = jnp.maximum(properties["T_amb"], L3T)
 
     # --- Compute new Tprime fields ---
-    L3Tp, L2Tp, L2T, L1T = getBothNewTprimes(
-        Levels, L3T, L2T, LInterp[1], L1T, LInterp[0]
-    )
+    interpolate_L2_to_L3 = LInterp[1]
+    interpolate_L1_to_L2 = LInterp[0]
+    L3Tp, L2T = getNewTprime(Levels[3], L3T, L2T, Levels[2], interpolate_L2_to_L3)
+    L2Tp, L1T = getNewTprime(Levels[2], L2T, L1T, Levels[1], interpolate_L1_to_L2)
 
     # --- Update volumetric correction terms ---
-    Vcu, Vmu = computeCoarseTprimeMassTerm_jax(
-        Levels, L3Tp, L2Tp, Lrhocp[3], Lrhocp[2], dt, Shapes, Vcu, Vmu
+    Vcu = computeL1TprimeTerms_Part2(
+        Levels, ne_nn, L3Tp, L2Tp, Lrhocp[3], Lrhocp[2], dt, Shapes, Vcu
+    )
+    Vmu = computeL2TprimeTerms_Part2(
+        Levels, ne_nn, L3Tp, Levels[3]["Tprime0"], Lrhocp[3], dt, Shapes, Vmu
     )
 
     # --- Corrector step ---
@@ -109,8 +112,11 @@ def stepGOMELT(
     Levels[3]["T0"] = jnp.maximum(properties["T_amb"], Levels[3]["T0"])
 
     # --- Final Tprime update for next time step ---
-    Levels[3]["Tprime0"], Levels[2]["Tprime0"], Levels[2]["T0"], Levels[1]["T0"] = (
-        getBothNewTprimes(Levels, Levels[3]["T0"], L2T, LInterp[1], L1T, LInterp[0])
+    Levels[3]["Tprime0"], Levels[2]["T0"] = getNewTprime(
+        Levels[3], Levels[3]["T0"], L2T, Levels[2], interpolate_L2_to_L3
+    )
+    Levels[2]["Tprime0"], Levels[1]["T0"] = getNewTprime(
+        Levels[2], Levels[2]["T0"], L1T, Levels[1], interpolate_L1_to_L2
     )
 
     # --- Update global state arrays ---
