@@ -106,7 +106,7 @@ def computeL1Temperature(
 @partial(jax.jit, static_argnames=["ne_nn"])
 def computeL2Temperature(
     new_Level1_temperature: jnp.ndarray,
-    interpolate_Leve1_to_Level2: jnp.ndarray,
+    interpolate_Level1_to_Level2: list[jnp.ndarray],
     Levels: list[dict],
     ne_nn: tuple,
     Level2_temperature: jnp.ndarray,
@@ -127,7 +127,7 @@ def computeL2Temperature(
     num_nodes_L2 = ne_nn[3]
 
     # Interpolate Level 1 temperature to Level 2 boundary
-    TfAll = interpolate_w_matrix(interpolate_Leve1_to_Level2, new_Level1_temperature)
+    TfAll = interpolate_w_matrix(interpolate_Level1_to_Level2, new_Level1_temperature)
 
     # Solve Level 2 temperature using matrix-free FEM
     L2T = solveMatrixFreeFE(
@@ -151,7 +151,7 @@ def computeL2Temperature(
 @partial(jax.jit, static_argnames=["ne_nn"])
 def computeSolutions_L3(
     new_Level2_temperature: jnp.ndarray,
-    interpolate_Leve2_to_Level3: jnp.ndarray,
+    interpolate_Level2_to_Level3: list[jnp.ndarray],
     Levels: list[dict],
     ne_nn: tuple,
     Level3_temperature: jnp.ndarray,
@@ -171,7 +171,7 @@ def computeSolutions_L3(
     num_nodes_L3 = ne_nn[4]
 
     # Interpolate Level 2 temperature to Level 3 boundary
-    TfAll = interpolate_w_matrix(interpolate_Leve2_to_Level3, new_Level2_temperature)
+    TfAll = interpolate_w_matrix(interpolate_Level2_to_Level3, new_Level2_temperature)
 
     # Solve Level 3 temperature using matrix-free FEM
     new_Level3_temperature = solveMatrixFreeFE(
@@ -222,8 +222,8 @@ def computeSolutions(
     num_nodes_L3 = ne_nn[4]
     num_elements_L1 = tmp_ne_nn[0]
     inactive_start_idx = tmp_ne_nn[1]
-    interpolate_Leve1_to_Level2 = LInterp[0]
-    interpolate_Leve2_to_Level3 = LInterp[1]
+    interpolate_Level1_to_Level2 = LInterp[0]
+    interpolate_Level2_to_Level3 = LInterp[1]
 
     # Solve coarse-level problem (Level 1)
     L1T = solveMatrixFreeFE(
@@ -241,7 +241,7 @@ def computeSolutions(
     new_Level1_temperature = assignBCs(L1T, Levels)
 
     # Interpolate Level 1 solution to Level 2 for source term
-    TfAll = interpolate_w_matrix(interpolate_Leve1_to_Level2, new_Level1_temperature)
+    TfAll = interpolate_w_matrix(interpolate_Level1_to_Level2, new_Level1_temperature)
 
     # Solve meso-level problem (Level 2)
     L2T = solveMatrixFreeFE(
@@ -258,7 +258,7 @@ def computeSolutions(
     new_Level2_temperature = assignBCsFine(L2T, TfAll, Levels[2]["BC"])
 
     # Interpolate Level 2 solution to Level 3 for boundary conditions
-    TfAll = interpolate_w_matrix(interpolate_Leve2_to_Level3, new_Level2_temperature)
+    TfAll = interpolate_w_matrix(interpolate_Level2_to_Level3, new_Level2_temperature)
 
     # Solve fine-level problem (Level 3)
     new_Level3_temperature = solveMatrixFreeFE(

@@ -7,25 +7,15 @@ from .shape_functions import compute3DN
 @jax.jit
 def interpolatePoints(
     Level: dict[str, list[jnp.ndarray]],
-    u: jnp.ndarray,
+    value_array: jnp.ndarray,
     node_coords_new: list[jnp.ndarray],
 ) -> jnp.ndarray:
     """
     Interpolate a scalar field from a structured mesh to new coordinates.
 
     This function evaluates shape functions at new nodal coordinates and
-    uses them to interpolate values from the source field `u` defined on
+    uses them to interpolate values from the source field `value_array` defined on
     Level["node_coords"] and Level["connect"].
-
-    Parameters:
-    Level (dict): Contains mesh information:
-                  - "node_coords": list of 1D arrays for x, y, z coordinates.
-                  - "connect": list of connectivity arrays in x, y, z.
-    u (array): Field values at the source mesh nodes.
-    node_coords_new (list): New nodal coordinates [x_new, y_new, z_new].
-
-    Returns:
-    array: Interpolated values at the new nodal coordinates.
     """
     ne_x = Level["connect"][0].shape[0]
     ne_y = Level["connect"][1].shape[0]
@@ -85,28 +75,19 @@ def interpolatePoints(
         valid = jnp.logical_and((Nc >= -1e-2).all(), (Nc <= 1 + 1e-2).all())
         Nc = jax.lax.select(valid, jnp.clip(Nc, 0.0, 1.0), jnp.zeros_like(Nc))
 
-        return Nc @ u[node]
+        return Nc @ value_array[node]
 
     return jax.vmap(stepInterpolatePoints)(jnp.arange(total_points))
 
 
 @jax.jit
-def interpolatePointsMatrix(Level, node_coords_new):
+def interpolatePointsMatrix(
+    Level: dict,
+    node_coords_new: list[jnp.ndarray],
+) -> list[jnp.ndarray, jnp.ndarray]:
     """
     Compute interpolation shape functions and node indices for mapping
     values from a coarse mesh to a new set of coordinates.
-
-    Parameters:
-    Level (dict): Contains mesh information:
-                  - "node_coords": list of 1D arrays for x, y, z coordinates.
-                  - "connect": list of connectivity arrays in x, y, z.
-    node_coords_new (list): New nodal coordinates [x_new, y_new, z_new],
-                            each as a 2D array.
-
-    Returns:
-    list: [_Nc, _node]
-          _Nc (array): Shape function values for interpolation.
-          _node (array): Indices of coarse nodes contributing to each point.
     """
     ne_x = Level["connect"][0].shape[0]
     ne_y = Level["connect"][1].shape[0]
@@ -168,26 +149,22 @@ def interpolatePointsMatrix(Level, node_coords_new):
 
         return Nc, node
 
-    _Nc, _node = jax.vmap(stepInterpolatePoints)(jnp.arange(total_points))
-    return [_Nc, _node]
+    N_weights, indices = jax.vmap(stepInterpolatePoints)(jnp.arange(total_points))
+    return [N_weights, indices]
 
 
 @jax.jit
-def interpolate_w_matrix(C2F, T):
+def interpolate_w_matrix(
+    interpolate_coarse_to_fine: list[jnp.ndarray],
+    coarse_temperature: jnp.ndarray,
+) -> jnp.ndarray:
     """
     Interpolate a solution field to new nodal coordinates using shape functions.
 
     This function applies precomputed shape functions and node indices
-    (from `interpolatePointsMatrix`) to interpolate the solution `T`
+    (from `interpolatePointsMatrix`) to interpolate the coarse temperature solution
     from a source mesh to a new set of points.
-
-    Parameters:
-    C2F (tuple): Interpolation data.
-                 - C2F[0]: Shape function weights (array of shape [n_new, n_basis]).
-                 - C2F[1]: Indices of source nodes (array of shape [n_new, n_basis]).
-    T (array): Source solution values at coarse nodes.
-
-    Returns:
-    array: Interpolated solution at new nodal coordinates.
     """
-    return multiply(C2F[0], T[C2F[1]]).sum(axis=1)
+    N_weights = interpolate_coarse_to_fine[0]
+    indices = interpolate_coarse_to_fine[1]
+    return multiply(N_weights, coarse_temperature[indices]).sum(axis=1)
