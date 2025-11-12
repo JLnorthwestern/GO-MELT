@@ -10,6 +10,8 @@ from go_melt.utils.helper_functions import (
     getCoarseNodesInFineRegion,
     getOverlapRegion,
 )
+from typing import Union
+import pint
 
 
 class obj:
@@ -197,55 +199,65 @@ def SetupProperties(prop_obj):
     Returns:
     dict: A dictionary of structured properties with default fallbacks.
     """
-    properties = dict2obj(prop_obj)
+    properties = dict2obj({})
 
-    # --- Thermal conductivity (W/m·K) ---
-    # Powder: constant
-    properties.k_powder = prop_obj.get("thermal_conductivity_powder", 0.4)
-    # Bulk: linear temperature dependence (a1 * T + a0)
-    properties.k_bulk_coeff_a0 = prop_obj.get("thermal_conductivity_bulk_a0", 4.23)
-    properties.k_bulk_coeff_a1 = prop_obj.get("thermal_conductivity_bulk_a1", 0.016)
-    # Fluid: constant
-    properties.k_fluid_coeff_a0 = prop_obj.get("thermal_conductivity_fluid_a0", 29.0)
+    # --- Thermal conductivity ---
+    properties.k_powder = get_with_units(
+        prop_obj, "thermal_conductivity_powder", 0.4, "W/(m*K)"
+    )
+    properties.k_bulk_coeff_a0 = get_with_units(
+        prop_obj, "thermal_conductivity_bulk_a0", 4.23, "W/(m*K)"
+    )
+    properties.k_bulk_coeff_a1 = get_with_units(
+        prop_obj, "thermal_conductivity_bulk_a1", 0.016, "W/(m*K^2)"
+    )
+    properties.k_fluid_coeff_a0 = get_with_units(
+        prop_obj, "thermal_conductivity_fluid_a0", 29.0, "W/(m*K)"
+    )
 
-    # --- Heat capacity (J/kg·K) ---
-    # Solid: linear temperature dependence
-    properties.cp_solid_coeff_a0 = prop_obj.get("heat_capacity_solid_a0", 383.1)
-    properties.cp_solid_coeff_a1 = prop_obj.get("heat_capacity_solid_a1", 0.174)
-    # Mushy and fluid phases: constant
-    properties.cp_mushy = prop_obj.get("heat_capacity_mushy", 3235.0)
-    properties.cp_fluid = prop_obj.get("heat_capacity_fluid", 769.0)
+    # --- Heat capacity ---
+    properties.cp_solid_coeff_a0 = get_with_units(
+        prop_obj, "heat_capacity_solid_a0", 383.1, "J/(kg*K)"
+    )
+    properties.cp_solid_coeff_a1 = get_with_units(
+        prop_obj, "heat_capacity_solid_a1", 0.174, "J/(kg*K^2)"
+    )
+    properties.cp_mushy = get_with_units(
+        prop_obj, "heat_capacity_mushy", 3235.0, "J/(kg*K)"
+    )
+    properties.cp_fluid = get_with_units(
+        prop_obj, "heat_capacity_fluid", 769.0, "J/(kg*K)"
+    )
 
-    # --- Density (kg/mm³) ---
-    properties.rho = prop_obj.get("density", 8.0e-6)
+    # --- Density ---
+    properties.rho = get_with_units(prop_obj, "density", 8.0e-6, "kg/mm^3")
 
     # --- Laser parameters ---
-    properties.laser_radius = prop_obj.get("laser_radius", 0.110)  # mm
-    properties.laser_depth = prop_obj.get("laser_depth", 0.05)  # mm
-    properties.laser_power = prop_obj.get("laser_power", 300.0)  # W
+    properties.laser_radius = get_with_units(prop_obj, "laser_radius", 0.110, "mm")
+    properties.laser_depth = get_with_units(prop_obj, "laser_depth", 0.05, "mm")
+    properties.laser_power = get_with_units(prop_obj, "laser_power", 300.0, "W")
     properties.laser_eta = prop_obj.get("laser_absorptivity", 0.25)  # unitless
-    properties.laser_center = prop_obj.get("laser_center", [])  # mm
+    properties.laser_center = prop_obj.get("laser_center", [])  # mm array
 
-    # --- Temperature thresholds (K) ---
-    properties.T_amb = prop_obj.get("T_amb", 353.15)
-    properties.T_solidus = prop_obj.get("T_solidus", 1554.0)
-    properties.T_liquidus = prop_obj.get("T_liquidus", 1625.0)
-    properties.T_boiling = prop_obj.get("T_boiling", 3038.0)
+    # --- Temperature thresholds ---
+    properties.T_amb = get_with_units(prop_obj, "T_amb", 353.15, "K")
+    properties.T_solidus = get_with_units(prop_obj, "T_solidus", 1554.0, "K")
+    properties.T_liquidus = get_with_units(prop_obj, "T_liquidus", 1625.0, "K")
+    properties.T_boiling = get_with_units(prop_obj, "T_boiling", 3038.0, "K")
 
     # --- Heat transfer and radiation ---
-    properties.h_conv = prop_obj.get("h_conv", 1.473e-5)  # W/mm²·K
-    properties.h_conv *= 1e6  # Quick fix: later assumes in m for surface BC calc
+    properties.h_conv = get_with_units(prop_obj, "h_conv", 1.0e1, "W/(m^2*K)")
     properties.vareps = prop_obj.get("emissivity", 0.600)  # unitless
     properties.evc = prop_obj.get("evaporation_coefficient", 0.82)  # unitless
 
     # --- Physical constants ---
-    properties.kb = prop_obj.get("boltzmann_constant", 1.38e-23)  # J/K
-    properties.mA = prop_obj.get("atomic_mass", 7.9485017e-26)  # kg
-    properties.Lev = prop_obj.get("latent_heat_evap", 4.22e6)  # J/kg
-    properties.molar_mass = prop_obj.get("molar_mass", 58.69) * 1e-3  # g/mol → kg/mol
+    properties.kb = get_with_units(prop_obj, "boltzmann_constant", 1.38e-23, "J/K")
+    properties.mA = get_with_units(prop_obj, "atomic_mass", 7.9485017e-26, "kg")
+    properties.Lev = get_with_units(prop_obj, "latent_heat_evap", 4.22e6, "J/kg")
+    properties.molar_mass = get_with_units(prop_obj, "molar_mass", 0.04, "kg/mol")
 
-    # --- Layer height (mm) ---
-    properties.layer_height = prop_obj.get("layer_height", 0.04)
+    # --- Layer height ---
+    properties.layer_height = get_with_units(prop_obj, "layer_height", 0.04, "mm")
 
     # --- Universal constants ---
     properties.sigma_sb = 5.67e-8  # Stefan–Boltzmann constant (W/m²·K⁴)
@@ -261,6 +273,18 @@ def SetupProperties(prop_obj):
     properties.CP_coeff = 0.54 * properties.atmospheric_pressure
 
     return structure_to_dict(properties)
+
+
+def get_with_units(prop_obj, key, default_value, default_unit):
+    """
+    Extracts a property with units, converts to SI, returns float.
+    """
+    ureg = pint.UnitRegistry()
+    entry = prop_obj.get(key, {"value": default_value, "unit": default_unit})
+    value = entry["value"]
+    unit = entry["unit"]
+    result = (value * ureg(unit)).to(default_unit).magnitude
+    return result
 
 
 def SetupNonmesh(nonmesh_input):
@@ -337,71 +361,55 @@ def SetupNonmesh(nonmesh_input):
     return structure_to_dict(Nonmesh)
 
 
-def SetupStaticNodesAndElements(L):
+def SetupStaticNodesAndElements(Levels: list[dict]) -> tuple[int]:
     """
     Extract static element and node counts from a list of level dictionaries.
-
-    Parameters:
-    L (list): A list of level dictionaries (e.g., from SetupLevels),
-              where each dictionary contains 'ne' (number of elements)
-              and 'nn' (number of nodes) as JAX arrays.
-
-    Returns:
-    tuple: A tuple containing:
-        - L[2]["ne"] as int
-        - L[3]["ne"] as int
-        - L[1]["nn"] as int
-        - L[2]["nn"] as int
-        - L[3]["nn"] as int
     """
     return (
-        L[2]["ne"].tolist(),
-        L[3]["ne"].tolist(),
-        L[1]["nn"].tolist(),
-        L[2]["nn"].tolist(),
-        L[3]["nn"].tolist(),
+        Levels[2]["ne"].tolist(),
+        Levels[3]["ne"].tolist(),
+        Levels[1]["nn"].tolist(),
+        Levels[2]["nn"].tolist(),
+        Levels[3]["nn"].tolist(),
     )
 
 
-def SetupStaticSubcycle(N):
+def SetupStaticSubcycle(
+    nonmesh: dict[str, int],
+) -> tuple[int, int, int, float, float, float]:
     """
-    Extract and compute subcycle values from the non-mesh configuration.
-
-    Parameters:
-    N (dict): Dictionary containing subcycle numbers for Level 2 and Level 3.
-
-    Returns:
-    tuple: A tuple containing:
-        - N2 (int): Subcycle count for Level 2
-        - N3 (int): Subcycle count for Level 3
-        - N23 (int): Total subcycles (N2 * N3)
-        - fN2 (float): N2 as float
-        - fN3 (float): N3 as float
-        - fN23 (float): N23 as float
+    Extract and compute static subcycle values from the non-mesh configuration.
     """
-    N2, N3 = N["subcycle_num_L2"], N["subcycle_num_L3"]
-    N23 = N2 * N3
-    fN2, fN3, fN23 = float(N2), float(N3), float(N23)
-    return (N2, N3, N23, fN2, fN3, fN23)
+    subcycles_L2 = nonmesh["subcycle_num_L2"]
+    subcycles_L3 = nonmesh["subcycle_num_L3"]
+    total_subcycles = subcycles_L2 * subcycles_L3
+
+    # Float versions for downstream calculations
+    subcycles_L2_float = float(subcycles_L2)
+    subcycles_L3_float = float(subcycles_L3)
+    total_subcycles_float = float(total_subcycles)
+
+    return (
+        subcycles_L2,
+        subcycles_L3,
+        total_subcycles,
+        subcycles_L2_float,
+        subcycles_L3_float,
+        total_subcycles_float,
+    )
 
 
-def dict2obj(dict1):
+def dict2obj(dict1: dict) -> obj:
     """
     Convert a dictionary into an object with attribute-style access.
 
     This function serializes the dictionary to JSON and then deserializes
     it using a custom object hook to create an instance of the `obj` class.
-
-    Parameters:
-    dict1 (dict): The dictionary to convert.
-
-    Returns:
-    obj: An object with attributes corresponding to the dictionary keys.
     """
     return json.loads(json.dumps(dict1), object_hook=obj)
 
 
-def structure_to_dict(struct):
+def structure_to_dict(struct: obj) -> dict:
     """
     Recursively convert a nested object with attributes into a dictionary.
 
@@ -409,12 +417,6 @@ def structure_to_dict(struct):
     has a __dict__ (i.e., is an object) and recursively converting it,
     unless the object has a 'tolist' method (e.g., NumPy or JAX arrays),
     in which case it is left as-is.
-
-    Parameters:
-    struct (object): An object with attributes to convert.
-
-    Returns:
-    dict: A dictionary representation of the object's attributes.
     """
     return {
         k: (
@@ -426,26 +428,25 @@ def structure_to_dict(struct):
     }
 
 
-def calcStaticTmpNodesAndElements(L, v):
+def calcStaticTmpNodesAndElements(
+    Levels: list[dict],
+    toolpath_input: Union[list[float], jnp.ndarray],
+) -> tuple[int, int]:
     """
-    Calculate temporary element and node counts in Level 1 up to a given z-value.
-
-    Parameters:
-    L (list): List of level dictionaries (e.g., from SetupLevels).
-    v (list or array): A 3D coordinate [x, y, z] used to filter nodes by z-value.
-
-    Returns:
-    tuple:
-        tmp_ne (int): Estimated number of elements below or at z = v[2].
-        tmp_nn (int): Estimated number of nodes below or at z = v[2].
+    Calculate active elements and nodes in Level 1. Active elements are below the top
+    surface of the active layer.
     """
-    # Mask for nodes in Level 1 where z <= v[2] + tolerance
-    Level1_mask = L[1]["node_coords"][2] <= v[2] + 1e-5
+    # Mask for nodes in Level 1 where z <= toolpath_input[2] + tolerance
+    Level1_mask = Levels[1]["node_coords"][2] <= toolpath_input[2] + 1e-5
     Level1_nn = sum(Level1_mask)
 
     # Calculate temporary number of elements and nodes
-    tmp_ne = L[1]["elements"][0] * L[1]["elements"][1] * (Level1_nn - 1)
-    tmp_ne = tmp_ne.tolist()
-    tmp_nn = (L[1]["nodes"][0] * L[1]["nodes"][1] * Level1_nn).tolist()
+    active_Level1_elements = (
+        Levels[1]["elements"][0] * Levels[1]["elements"][1] * (Level1_nn - 1)
+    )
+    active_Level1_elements = active_Level1_elements.tolist()
+    active_Level1_nodes = (
+        Levels[1]["nodes"][0] * Levels[1]["nodes"][1] * Level1_nn
+    ).tolist()
 
-    return (tmp_ne, tmp_nn)
+    return (active_Level1_elements, active_Level1_nodes)

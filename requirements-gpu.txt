@@ -16,3 +16,4 @@ scipy==1.9.0
 pyevtk # For output to vtk
 dill
 pytest
+pint # For unit conversions

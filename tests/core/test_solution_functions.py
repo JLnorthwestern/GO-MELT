@@ -216,5 +216,4 @@ def test_solveMatrixFreeFE_outputs_shape_and_values():
 
 
 if __name__ == "__main__":
-    test_solveMatrixFreeFE_outputs_shape_and_values()
     pytest.main([__file__])
