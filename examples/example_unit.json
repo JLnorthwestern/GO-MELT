@@ -97,7 +97,6 @@
         "h_conv": { "value": 1.473e-5, "unit": "W/(mm^2*K)" },
         "emissivity": 0.3,
         "evaporation_coefficient": 0.82,
-        "boltzmann_constant": { "value": 1.38e-23, "unit": "J/K" },
         "atomic_mass": { "value": 9.746e-26, "unit": "kg" },
         "latent_heat_evap": { "value": 6457000.0, "unit": "J/kg" },
 	    "molar_mass": { "value": 58.69, "unit": "g/mol" },

@@ -220,7 +220,6 @@ def SetupProperties(prop_obj: dict) -> dict:
     properties.evc = prop_obj.get("evaporation_coefficient", 0.82)  # unitless
 
     # --- Physical constants ---
-    properties.kb = get_with_units(prop_obj, "boltzmann_constant", 1.38e-23, "J/K")
     properties.mA = get_with_units(prop_obj, "atomic_mass", 7.9485017e-26, "kg")
     properties.Lev = get_with_units(prop_obj, "latent_heat_evap", 4.22e6, "J/kg")
     properties.molar_mass = get_with_units(prop_obj, "molar_mass", 0.04, "kg/mol")
@@ -229,6 +228,7 @@ def SetupProperties(prop_obj: dict) -> dict:
     properties.layer_height = get_with_units(prop_obj, "layer_height", 0.04, "mm")
 
     # --- Universal constants ---
+    properties.kb = 1.380649e-23  # Boltzmann constant (J/K)
     properties.sigma_sb = 5.67e-8  # Stefan–Boltzmann constant (W/m²·K⁴)
     properties.gas_const = 8.314  # Molar gas constant (J/mol·K)
     properties.atmospheric_pressure = 101325  # Pa
