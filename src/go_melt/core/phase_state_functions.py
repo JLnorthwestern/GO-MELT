@@ -85,7 +85,7 @@ def computeStateProperties(
         * (properties["k_bulk_coeff_a1"] * temperature + properties["k_bulk_coeff_a0"])
     )
     k_fluid = liquid_phase_indicator * properties["k_fluid_coeff_a0"]
-    k = (k_powder + k_bulk + k_fluid) / 1000  # Convert from W/(m*K) to W/(mm*K)
+    k = k_powder + k_bulk + k_fluid
 
     # Volumetric heat capacity (J/mm³·K)
     cp_solid = (

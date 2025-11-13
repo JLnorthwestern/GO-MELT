@@ -173,16 +173,16 @@ def SetupProperties(prop_obj: dict) -> dict:
 
     # --- Thermal conductivity ---
     properties.k_powder = get_with_units(
-        prop_obj, "thermal_conductivity_powder", 0.4, "W/(m*K)"
+        prop_obj, "thermal_conductivity_powder", 0.4e-3, "W/(mm*K)"
     )
     properties.k_bulk_coeff_a0 = get_with_units(
-        prop_obj, "thermal_conductivity_bulk_a0", 4.23, "W/(m*K)"
+        prop_obj, "thermal_conductivity_bulk_a0", 4.23e-3, "W/(mm*K)"
     )
     properties.k_bulk_coeff_a1 = get_with_units(
-        prop_obj, "thermal_conductivity_bulk_a1", 0.016, "W/(m*K^2)"
+        prop_obj, "thermal_conductivity_bulk_a1", 0.016e-3, "W/(mm*K^2)"
     )
     properties.k_fluid_coeff_a0 = get_with_units(
-        prop_obj, "thermal_conductivity_fluid_a0", 29.0, "W/(m*K)"
+        prop_obj, "thermal_conductivity_fluid_a0", 29.0e-3, "W/(mm*K)"
     )
 
     # --- Heat capacity ---
