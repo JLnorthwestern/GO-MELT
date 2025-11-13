@@ -36,7 +36,7 @@ def stepGOMELTDwellTime(
 
     # Compute boundary conditions (includes convection, radiation, evaporation)
     source_term = computeConvRadBC(
-        L1, L1["T0"], num_elements_L1, num_nodes_L1, properties, F=0
+        L1, L1["T0"], num_elements_L1, num_nodes_L1, properties, flux_vector=0
     )
 
     # Compute temperature-dependent properties

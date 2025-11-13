@@ -5,6 +5,7 @@ import copy
 from .boundary_condition_functions import getBCindices
 from .move_mesh_functions import find_max_const
 from .mesh_functions import calc_length_h, calcNumNodes, createMesh3D
+from .data_structures import obj
 from go_melt.utils.helper_functions import (
     getCoarseNodesInLargeFineRegion,
     getCoarseNodesInFineRegion,
@@ -12,24 +13,6 @@ from go_melt.utils.helper_functions import (
 )
 from typing import Union
 import pint
-
-
-class obj:
-    """
-    A simple wrapper class to convert a dictionary into an object
-    with attributes accessible via dot notation.
-
-    Attributes are dynamically created from the keys and values
-    of the input dictionary.
-
-    Example:
-        data = {'a': 1, 'b': 2}
-        o = obj(data)
-        print(o.a)  # Outputs: 1
-    """
-
-    def __init__(self, dict1):
-        self.__dict__.update(dict1)
 
 
 def SetupLevels(solver_input: dict, properties: dict) -> list[dict]:
