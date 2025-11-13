@@ -91,13 +91,13 @@ def go_melt(input_file: Path):
     # -------------------------------
     # Initial Laser Position
     # -------------------------------
-    if not Properties["laser_center"]:
+    if not Nonmesh["laser_center"]:
         with open(Nonmesh["toolpath"], "r") as tool_path_file:
             laser_start = np.array(
                 [float(val) for val in tool_path_file.readline().split(",")]
             )
     else:
-        laser_start = np.array(Properties["laser_center"])
+        laser_start = np.array(Nonmesh["laser_center"])
 
     # -------------------------------
     # Interpolation Matrices

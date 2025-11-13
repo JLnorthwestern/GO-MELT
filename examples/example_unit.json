@@ -77,15 +77,6 @@
         }
     },
     "properties": {
-        "laser_center": [
-            2.5,
-            2.5,
-            0.0,
-            0,
-            0,
-            0,
-            0
-        ],
         "thermal_conductivity_powder": { "value": 0.4, "unit": "W/(m*K)" },
         "thermal_conductivity_bulk_a0": { "value": 4.23, "unit": "W/(m*K)" },
         "thermal_conductivity_bulk_a1": { "value": 0.016, "unit": "W/(m*K^2)" },
@@ -113,13 +104,13 @@
         "layer_height": { "value": 0.5, "unit": "mm" }
     },
     "nonmesh": {
-        "timestep_L3": 1e-05,
-        "dwell_time": 1.0,
+        "timestep_L3": { "value": 1e-5, "unit": "s" },
+        "dwell_time": { "value": 1.0, "unit": "s" },
         "wait_time": 200,
         "output_files": 1,
         "record_step": 25,
         "Level1_record_step": 1,
-        "laser_velocity": 1000,
+        "laser_velocity": { "value": 1000, "unit": "mm/s" },
         "save_path": "./results/example_unit/",
         "gcode": "./examples/gcodefiles/example_unit.gcode",
         "toolpath": "./results/example_unit/toolpath.txt",
@@ -128,7 +119,8 @@
         "subcycle_num_L3": 4,
         "info_T": 1,
         "dwell_time_multiplier": 8,
-        "use_txt": 0
+        "use_txt": 0,
+        "laser_center": [2.5, 2.5, 0.0, 0, 0, 0, 0]
     }
 }
 

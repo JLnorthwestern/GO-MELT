@@ -32,7 +32,7 @@ class obj:
         self.__dict__.update(dict1)
 
 
-def SetupLevels(solver_input, properties):
+def SetupLevels(solver_input: dict, properties: dict) -> list[dict]:
     """
     Set up multilevel mesh structures and initialize physical fields.
 
@@ -41,13 +41,6 @@ def SetupLevels(solver_input, properties):
     regions between levels for multiscale simulations. Level0 is fine-scale
     top layer. Level 1 is part-scale coarse mesh. Level 2 is meso-scale.
     Level 3 is fine-scale near the melt pool.
-
-    Parameters:
-    solver_input (dict): Dictionary containing configuration for Level1-Level3.
-    properties (dict): Dictionary of physical and simulation parameters.
-
-    Returns:
-    list: A list of dictionaries representing Level0 to Level3 configurations.
     """
 
     # Parse solver input into Level1–Level3 objects
@@ -184,7 +177,7 @@ def SetupLevels(solver_input, properties):
     return Levels
 
 
-def SetupProperties(prop_obj):
+def SetupProperties(prop_obj: dict) -> dict:
     """
     Initialize and return a dictionary of material and simulation properties.
 
@@ -192,12 +185,6 @@ def SetupProperties(prop_obj):
     dictionary and assigns them to a structured object for use in
     simulations. It also computes derived coefficients used in
     evaporation and heat transfer models.
-
-    Parameters:
-    prop_obj (dict): Dictionary containing material and simulation parameters.
-
-    Returns:
-    dict: A dictionary of structured properties with default fallbacks.
     """
     properties = dict2obj({})
 
@@ -237,7 +224,6 @@ def SetupProperties(prop_obj):
     properties.laser_depth = get_with_units(prop_obj, "laser_depth", 0.05, "mm")
     properties.laser_power = get_with_units(prop_obj, "laser_power", 300.0, "W")
     properties.laser_eta = prop_obj.get("laser_absorptivity", 0.25)  # unitless
-    properties.laser_center = prop_obj.get("laser_center", [])  # mm array
 
     # --- Temperature thresholds ---
     properties.T_amb = get_with_units(prop_obj, "T_amb", 353.15, "K")
@@ -287,28 +273,21 @@ def get_with_units(prop_obj, key, default_value, default_unit):
     return result
 
 
-def SetupNonmesh(nonmesh_input):
+def SetupNonmesh(nonmesh_input: dict) -> dict:
     """
     Initialize and return a dictionary of non-mesh simulation parameters.
-
-    Parameters:
-    nonmesh_input (dict): Dictionary containing time-stepping, output,
-                          and laser path configuration.
-
-    Returns:
-    dict: A dictionary of structured non-mesh parameters.
     """
-    Nonmesh = dict2obj(nonmesh_input)
+    Nonmesh = dict2obj({})
 
     # Timestep for finest mesh (s)
-    Nonmesh.timestep_L3 = nonmesh_input.get("timestep_L3", 1e-5)
+    Nonmesh.timestep_L3 = get_with_units(nonmesh_input, "timestep_L3", 1e-5, "s")
 
     # Subcycle numbers (unitless)
     Nonmesh.subcycle_num_L2 = nonmesh_input.get("subcycle_num_L2", 1)
     Nonmesh.subcycle_num_L3 = nonmesh_input.get("subcycle_num_L3", 1)
 
     # Dwell time duration (s)
-    Nonmesh.dwell_time = nonmesh_input.get("dwell_time", 0.1)
+    Nonmesh.dwell_time = get_with_units(nonmesh_input, "dwell_time", 0.1, "s")
 
     # Coarse-domain recording frequency (steps)
     Nonmesh.Level1_record_step = nonmesh_input.get("Level1_record_step", 1)
@@ -333,10 +312,9 @@ def SetupNonmesh(nonmesh_input):
     Nonmesh.info_T = nonmesh_input.get("info_T", 0)
 
     # Laser velocity (mm/s)
-    Nonmesh.laser_velocity = nonmesh_input.get("laser_velocity", 500)
-
-    # Wait time after each track (s)
-    Nonmesh.wait_track = nonmesh_input.get("wait_track", 0.0)
+    Nonmesh.laser_velocity = get_with_units(
+        nonmesh_input, "laser_velocity", 500, "mm/s"
+    )
 
     # Recording frequency (steps)
     Nonmesh.record_step = nonmesh_input.get(
@@ -353,6 +331,9 @@ def SetupNonmesh(nonmesh_input):
 
     # Use TXT format for toolpath (flag)
     Nonmesh.use_txt = nonmesh_input.get("use_txt", 0)
+
+    # Laser center
+    Nonmesh.laser_center = nonmesh_input.get("laser_center", [])
 
     # Create output directory if it doesn't exist
     if not os.path.exists(Nonmesh.save_path):
