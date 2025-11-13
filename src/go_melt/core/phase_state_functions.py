@@ -1,11 +1,14 @@
 from functools import partial
 import jax
+import jax.numpy as jnp
 from go_melt.utils.interpolation_functions import interpolatePoints
 from go_melt.utils.helper_functions import getOverlapRegion
 
 
 @partial(jax.jit, static_argnames=["substrate"])
-def updateStateProperties(Levels, properties, substrate):
+def updateStateProperties(
+    Levels: list[dict], properties: dict, substrate: tuple[int]
+) -> tuple[list[dict], list[jnp.ndarray], list[jnp.ndarray]]:
     """
     Update material state fields (S1, S2) and compute thermal properties (k, rhocp)
     for all levels based on current temperature and substrate configuration.
@@ -15,17 +18,6 @@ def updateStateProperties(Levels, properties, substrate):
       • Computes temperature-dependent thermal conductivity and heat capacity.
       • Interpolates state from Level 2 to Level 1 to maintain consistency.
       • Applies substrate override to enforce solid state in substrate region.
-
-    Parameters:
-    Levels (dict): Multilevel mesh and field data.
-    properties (dict): Material and simulation properties.
-    substrate (list): List of substrate node indices for each level.
-
-    Returns:
-    tuple:
-        - Levels (dict): Updated with new S1, S2, and interpolated state.
-        - Lk (list): Thermal conductivity for Levels 1-3 (index-aligned with Levels).
-        - Lrhocp (list): Volumetric heat capacity for Levels 1-3 (index-aligned).
     """
     # --- Level 3: Fine scale ---
     Levels[3]["S1"], Levels[3]["S2"], L3k, L3rhocp = computeStateProperties(
@@ -58,51 +50,54 @@ def updateStateProperties(Levels, properties, substrate):
     return Levels, [0, L1k, L2k, L3k], [0, L1rhocp, L2rhocp, L3rhocp]
 
 
-def computeStateProperties(T, S1, properties, Level_nodes_substrate):
+def computeStateProperties(
+    temperature: jnp.ndarray,
+    bulk_phase_indicator: jnp.ndarray,
+    properties: dict,
+    Level_nodes_substrate: int,
+) -> tuple[jnp.ndarray, jnp.ndarray, jnp.ndarray, jnp.ndarray]:
     """
     Update phase states and compute temperature-dependent properties.
-
-    Parameters:
-    T (array): Temperature field.
-    S1 (array): Solid/powder state (0 = powder, 1 = bulk).
-    properties (dict): Material properties.
-    Level_nodes_substrate (int): Number of substrate nodes (always solid).
-
-    Returns:
-    tuple:
-        - S1 (array): Updated solid/powder state.
-        - S2 (array): Fluid state (0 = not fluid, 1 = fluid).
-        - k (array): Thermal conductivity (W/mm·K).
-        - rhocp (array): Volumetric heat capacity (J/mm³·K).
     """
     # Phase indicators
-    S2 = T >= properties["T_liquidus"]  # Fluid
-    S3 = (T > properties["T_solidus"]) & (T < properties["T_liquidus"])  # Mushy
+    liquid_phase_indicator = temperature >= properties["T_liquidus"]  # Fluid
+    mushy_phase_indicator = (temperature > properties["T_solidus"]) & (
+        temperature < properties["T_liquidus"]
+    )  # Mushy
 
-    # Update S1: bulk if already bulk or now fluid
-    S1 = 1.0 * ((S1 > 0.499) | S2)
+    # Update bulk_phase_indicator: bulk if already bulk or now fluid
+    bulk_phase_indicator = 1.0 * (
+        (bulk_phase_indicator > 0.499) | liquid_phase_indicator
+    )
 
     # Enforce solid state in substrate region
-    S1 = S1.at[:Level_nodes_substrate].set(1)
+    bulk_phase_indicator = bulk_phase_indicator.at[:Level_nodes_substrate].set(1)
 
     # Thermal conductivity (W/mm·K)
-    k_powder = (1 - S1) * (1 - S2) * properties["k_powder"]
-    k_bulk = (
-        S1
-        * (1 - S2)
-        * (properties["k_bulk_coeff_a1"] * T + properties["k_bulk_coeff_a0"])
+    k_powder = (
+        (1 - bulk_phase_indicator)
+        * (1 - liquid_phase_indicator)
+        * properties["k_powder"]
     )
-    k_fluid = S2 * properties["k_fluid_coeff_a0"]
-    k = (k_powder + k_bulk + k_fluid) / 1000  # Convert from W/m·K
+    k_bulk = (
+        bulk_phase_indicator
+        * (1 - liquid_phase_indicator)
+        * (properties["k_bulk_coeff_a1"] * temperature + properties["k_bulk_coeff_a0"])
+    )
+    k_fluid = liquid_phase_indicator * properties["k_fluid_coeff_a0"]
+    k = (k_powder + k_bulk + k_fluid) / 1000  # Convert from W/(m*K) to W/(mm*K)
 
     # Volumetric heat capacity (J/mm³·K)
     cp_solid = (
-        (1 - S2)
-        * (1 - S3)
-        * (properties["cp_solid_coeff_a1"] * T + properties["cp_solid_coeff_a0"])
+        (1 - liquid_phase_indicator)
+        * (1 - mushy_phase_indicator)
+        * (
+            properties["cp_solid_coeff_a1"] * temperature
+            + properties["cp_solid_coeff_a0"]
+        )
     )
-    cp_mushy = S3 * properties["cp_mushy"]
-    cp_fluid = S2 * properties["cp_fluid"]
+    cp_mushy = mushy_phase_indicator * properties["cp_mushy"]
+    cp_fluid = liquid_phase_indicator * properties["cp_fluid"]
     rhocp = properties["rho"] * (cp_solid + cp_mushy + cp_fluid)
 
-    return S1, S2, k, rhocp
+    return bulk_phase_indicator, liquid_phase_indicator, k, rhocp
