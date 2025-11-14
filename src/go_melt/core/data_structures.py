@@ -39,7 +39,12 @@ class L2Carry_Corrector(NamedTuple):
     accum: jnp.ndarray
 
 
-class L3Carry(NamedTuple):
+class L3Carry_Predictor(NamedTuple):
+    T0: jnp.ndarray  # Level 3 temperature
+    S1: jnp.ndarray  # Level 3 phase state S1
+
+
+class L3Carry_Corrector(NamedTuple):
     T0: jnp.ndarray  # Level 3 temperature
     S1: jnp.ndarray  # Level 3 phase state S1
     S2: jnp.ndarray  # Level 3 phase state S2

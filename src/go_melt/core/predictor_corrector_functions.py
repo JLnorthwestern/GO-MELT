@@ -21,7 +21,12 @@ from .subgrid_term_functions import (
     computeL2TprimeTerms_Part2,
 )
 from .heat_source_functions import computeSourcesL3, computeLevelSource, computeSources
-from .data_structures import L2Carry_Predictor, L2Carry_Corrector, L3Carry
+from .data_structures import (
+    L2Carry_Predictor,
+    L2Carry_Corrector,
+    L3Carry_Predictor,
+    L3Carry_Corrector,
+)
 
 # TFSP: Temporary fix for single precision
 
@@ -158,7 +163,7 @@ def subcycleGOMELT(
     )
 
     # --- Subcycle Level 2 ---
-    def subcycleL2_Part1(_L2carry, _L2sub):
+    def subcycleL2_Part1(_L2carry: L2Carry_Predictor, _L2sub: int):
         (Lidx, L3rhocp_L2, L2S1, L2k, L2rhocp, L2F, L2V, _BC) = compute_Level2_step(
             _L2sub,
             subcycle,
@@ -190,7 +195,7 @@ def subcycleGOMELT(
         L2T = jnp.maximum(properties["T_amb"], L2T)  # TFSP
 
         # --- Subcycle Level 3 ---
-        def subcycleL3_Part1(_L3carry, _L3sub):
+        def subcycleL3_Part1(_L3carry: L3Carry_Predictor, _L3sub: int):
             (L3S1, L3S2, LLidx, L3T) = compute_Level3_step(
                 _L3carry,
                 properties,
@@ -207,22 +212,23 @@ def subcycleGOMELT(
                 LInterp,
             )
 
-            return ([L3T, L3S1], [L3T, L3S1])
+            return L3Carry_Predictor(L3T, L3S1), L3Carry_Predictor(L3T, L3S1)
 
         # Run Level 3 subcycling loop
-        [L3T, L3S1], _ = jax.lax.scan(
+        final_L3carry, _ = jax.lax.scan(
             subcycleL3_Part1,
-            [_L2carry.L3T0, _L2carry.L3S1],
+            L3Carry_Predictor(_L2carry.L3T0, _L2carry.L3S1),
             jnp.arange(subcycle[1]),
         )
 
         # Compute Updated Level 3 Tprime and update Level 2 Temperature
-        L3Tp, L2T = getNewTprime(Levels[3], L3T, L2T, Levels[2], LInterp[1])
-
-        return (
-            L2Carry_Predictor(L2T, L2S1, L3T, L3Tp, L3S1),
-            L2Carry_Predictor(L2T, L2S1, L3T, L3Tp, L3S1),
+        L3Tp, L2T = getNewTprime(
+            Levels[3], final_L3carry.T0, L2T, Levels[2], LInterp[1]
         )
+
+        # Return updated L2 predictor carry
+        next_L2 = L2Carry_Predictor(L2T, L2S1, final_L3carry.T0, L3Tp, final_L3carry.S1)
+        return next_L2, next_L2
 
     init_L2carry = L2Carry_Predictor(
         Levels[2]["T0"],
@@ -269,7 +275,7 @@ def subcycleGOMELT(
     L1T = jnp.maximum(properties["T_amb"], L1T)  # TFSP
 
     # --- Subcycle Level 2 ---
-    def subcycleL2_Part2(_L2carry, _L2sub):
+    def subcycleL2_Part2(_L2carry: L2Carry_Corrector, _L2sub: int):
         (Lidx, L3rhocp_L2, L2S1, L2k, L2rhocp, L2F, L2V, _BC) = compute_Level2_step(
             _L2sub,
             subcycle,
@@ -313,7 +319,7 @@ def subcycleGOMELT(
         L2T = jnp.maximum(properties["T_amb"], L2T)  # TFSP
 
         # --- Subcycle Level 3 ---
-        def subcycleL3_Part2(_L3carry, _L3sub):
+        def subcycleL3_Part2(_L3carry: L3Carry_Corrector, _L3sub: int):
             (L3S1, L3S2, LLidx, L3T) = compute_Level3_step(
                 _L3carry,
                 properties,
@@ -333,40 +339,52 @@ def subcycleGOMELT(
             # --- Accumulated Melt Time Update ---
             # Reset accumulation if solid becomes liquid again
             _resetmask = ((1 - 2 * _L3carry[2]) * L3S2) == 1
-            _resetaccumtime = _L3carry[4] * _resetmask
+            _resetaccumtime = _L3carry.accum * _resetmask
 
             # Update max accumulated melt time
             _max_check = jnp.maximum(_resetaccumtime, _L3carry[3])
             max_accum_L3 = _max_check
 
             # Update current accumulated melt time
-            accum_L3 = _L3carry[4] + laser_position[LLidx, 5] * L3S2 - _resetaccumtime
-
-            return (
-                [L3T, L3S1, L3S2, max_accum_L3, accum_L3],
-                [L3T, L3S1, L3S2, max_accum_L3, accum_L3],
+            accum_L3 = (
+                _L3carry.accum + laser_position[LLidx, 5] * L3S2 - _resetaccumtime
             )
 
-        # Run Level 3 subcycling loop
-        [L3T, L3S1, L3S2, max_accum_L3, accum_L3], _ = jax.lax.scan(
+            return (
+                L3Carry_Corrector(L3T, L3S1, L3S2, max_accum_L3, accum_L3),
+                L3Carry_Corrector(L3T, L3S1, L3S2, max_accum_L3, accum_L3),
+            )
+
+        # Run Level 3 subcycling loop with structured init carry
+        final_L3carry, _ = jax.lax.scan(
             subcycleL3_Part2,
-            [
+            L3Carry_Corrector(
                 _L2carry.L3T0,
                 _L2carry.L3S1,
                 _L2carry.L3S2,
                 _L2carry.max_accum,
                 _L2carry.accum,
-            ],
+            ),
             jnp.arange(subcycle[1]),
         )
 
         # Compute updated Tprime for Level 3 and temperature for Level 2
-        L3Tp, L2T = getNewTprime(Levels[3], L3T, L2T, Levels[2], LInterp[1])
-
-        return (
-            L2Carry_Corrector(L2T, L2S1, L3T, L3Tp, L3S1, L3S2, max_accum_L3, accum_L3),
-            L2Carry_Corrector(L2T, L2S1, L3T, L3Tp, L3S1, L3S2, max_accum_L3, accum_L3),
+        L3Tp, L2T = getNewTprime(
+            Levels[3], final_L3carry.T0, L2T, Levels[2], LInterp[1]
         )
+
+        # Return updated Level 2/3 state as L2Carry_Corrector
+        next_L2 = L2Carry_Corrector(
+            L2T,
+            L2S1,
+            final_L3carry.T0,
+            L3Tp,
+            final_L3carry.S1,
+            final_L3carry.S2,
+            final_L3carry.max_accum,
+            final_L3carry.accum,
+        )
+        return next_L2, next_L2
 
     init_L2carry = L2Carry_Corrector(
         Levels[2]["T0"],
