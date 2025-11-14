@@ -25,7 +25,6 @@ from .mesh_functions import getSubstrateNodes
 from .move_mesh_functions import moveEverything
 from .predictor_corrector_functions import stepGOMELT, subcycleGOMELT
 from .solution_functions import stepGOMELTDwellTime
-from go_melt.utils.helper_functions import melting_temp
 from go_melt.utils.interpolation_functions import (
     interpolatePoints,
     interpolatePointsMatrix,
@@ -52,14 +51,17 @@ def go_melt(input_file: Path):
 
     tstart = time.time()  # Start timer
 
-    level_names = ["L1", "L2", "L3"]
-
     # -------------------------------
     # Setup: Properties, Mesh, Nonmesh
     # -------------------------------
     Properties = SetupProperties(solver_input.get("properties", {}))
     Levels = SetupLevels(solver_input, Properties)
     Nonmesh = SetupNonmesh(solver_input.get("nonmesh", {}))
+
+    if Nonmesh["haste"]:
+        level_names = ["L1", "L2", "L3", "HASTE"]
+    else:
+        level_names = ["L1", "L2", "L3"]
 
     # -------------------------------
     # Static Mesh Metadata
@@ -119,11 +121,10 @@ def go_melt(input_file: Path):
     # -------------------------------
     laser_prev_z = float("inf")
     _dwell_time_count = 0
-    record_accum = True
+    record_accum = Nonmesh["record_TAM"]
 
-    if record_accum:
-        accum_time = jnp.zeros(Levels[0]["nn"])
-        max_accum_time = jnp.zeros(Levels[0]["nn"])
+    accum_time = jnp.zeros(Levels[0]["nn"])
+    max_accum_time = jnp.zeros(Levels[0]["nn"])
 
     move_hist = [jnp.array(0), jnp.array(0), jnp.array(0)]  # Laser movement history
 
@@ -170,12 +171,12 @@ def go_melt(input_file: Path):
         # -----------------------------------
         _pos = [
             tool_path_file.readline().split(",")
-            for _2 in range(subcycle[0] * subcycle[1])
+            for _2 in range(subcycle[0] * subcycle[1] * subcycle[-1])
         ]
 
         # Convert laser path to array if valid, else handle end-of-file
         if [""] not in _pos:
-            t_add = subcycle[2]
+            t_add = subcycle[2] * subcycle[-1]
             laser_all = jnp.array([[float(val) for val in line] for line in _pos])
         else:
             # Set up for partial single time-stepping and end simulation afterwards
@@ -193,7 +194,13 @@ def go_melt(input_file: Path):
         single_step = (
             any(laser_all[:, 2] != laser_prev_z)
             or load_chkpt
-            or (wait_inc > max(0, Nonmesh["wait_time"] - subcycle[0] * subcycle[1] * 2))
+            or (
+                wait_inc
+                > max(
+                    0,
+                    Nonmesh["wait_time"] - subcycle[0] * subcycle[1] * subcycle[-1] * 2,
+                )
+            )
             or not ongoing_simulation
             or laser_all.shape[0] == 1
             or (
@@ -349,7 +356,7 @@ def go_melt(input_file: Path):
                 # -----------------------------------
                 if wait_inc <= Nonmesh["wait_time"]:
                     # Full GO-MELT step (Levels 1–3)
-                    Levels, all_reset = stepGOMELT(
+                    Levels, max_accum_time, accum_time = stepGOMELT(
                         Levels,
                         ne_nn,
                         tmp_ne_nn,
@@ -360,32 +367,15 @@ def go_melt(input_file: Path):
                         laser_pos[5],  # Time step size
                         laser_pos[6],  # Power
                         substrate,
+                        max_accum_time,
+                        accum_time,
+                        record_accum,
                     )
 
                     if Nonmesh["info_T"]:
                         print(f"Step {time_inc + 1} / {total_t_inc}")
                         printLevelMaxMin(Levels, level_names)
 
-                    # Update accumulated melt time
-                    if record_accum:
-                        _resetaccumtime = accum_time[Levels[0]["idx"]] * (all_reset > 0)
-                        _max_check = jnp.maximum(
-                            _resetaccumtime, max_accum_time[Levels[0]["idx"]]
-                        )
-                        max_accum_time = max_accum_time.at[Levels[0]["idx"]].set(
-                            _max_check
-                        )
-                        accum_time = accum_time.at[Levels[0]["idx"]].add(
-                            -_resetaccumtime
-                        )
-
-                        accum_time = melting_temp(
-                            Levels[3]["T0"],
-                            laser_pos[5],  # Time step size
-                            Properties["T_liquidus"],
-                            accum_time,
-                            Levels[0]["idx"],
-                        )
                 else:
                     # Dwell time: only update Level 1
                     if (

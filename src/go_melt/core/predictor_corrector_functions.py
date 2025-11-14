@@ -1,6 +1,7 @@
 from functools import partial
 import jax
 import jax.numpy as jnp
+import copy
 from go_melt.utils.interpolation_functions import interpolatePoints
 from go_melt.utils.helper_functions import getOverlapRegion
 from .phase_state_functions import updateStateProperties, computeStateProperties
@@ -33,7 +34,7 @@ from .data_structures import (
 # TFSP: Temporary fix for single precision
 
 
-@partial(jax.jit, static_argnames=["ne_nn", "tmp_ne_nn", "substrate"])
+@partial(jax.jit, static_argnames=["ne_nn", "tmp_ne_nn", "substrate", "record_accum"])
 def stepGOMELT(
     Levels: list[dict],
     ne_nn: tuple[int],
@@ -45,7 +46,10 @@ def stepGOMELT(
     dt: jnp.ndarray,
     laser_power: jnp.ndarray,
     substrate: tuple[int],
-) -> tuple[dict, jnp.ndarray]:
+    max_accum_time: jnp.ndarray,
+    accum_time: jnp.ndarray,
+    record_accum: int,
+) -> tuple[dict, jnp.ndarray, jnp.ndarray]:
     """
     Perform a full explicit time step for the multilevel GOMELT simulation.
 
@@ -58,8 +62,7 @@ def stepGOMELT(
       6. Corrector step: solve temperature fields again using updated corrections.
       7. Update Tprime and temperature fields for the next time step.
     """
-    # Store previous melt state for comparison
-    preS2 = Levels[3]["S2"]
+    L3T_prev = copy.deepcopy(Levels[3]["T0"])
 
     # Update material state and thermal properties
     Levels, Lk, Lrhocp = updateStateProperties(Levels, properties, substrate)
@@ -126,10 +129,29 @@ def stepGOMELT(
     Levels[0]["S2"] = Levels[0]["S2"].at[:].set(False)
     Levels[0]["S2"] = Levels[0]["S2"].at[Levels[0]["idx"]].set(Levels[3]["S2"])
 
-    # Identify newly activated melt regions
-    _resetmask = ((1 - 2 * preS2) * Levels[3]["S2"]) == 1
+    if record_accum == 1:
+        accum_L3 = accum_time[Levels[0]["idx"]]
+        max_accum_L3 = max_accum_time[Levels[0]["idx"]]
 
-    return Levels, _resetmask
+        accum_L3 += (
+            jnp.minimum(
+                jnp.maximum(
+                    jnp.maximum(Levels[3]["T0"], L3T_prev) - properties["T_liquidus"],
+                    0,
+                )
+                / (jnp.abs(Levels[3]["T0"] - L3T_prev) + 1e-6),
+                1,
+            )
+            * dt
+        )
+
+        max_accum_L3 = jnp.maximum(max_accum_L3, accum_L3)
+        # Reset where L3T_all < T_liquidus
+        accum_L3 = jnp.where(Levels[3]["T0"] < properties["T_liquidus"], 0, accum_L3)
+        max_accum_time = max_accum_time.at[Levels[0]["idx"]].set(max_accum_L3)
+        accum_time = accum_time.at[Levels[0]["idx"]].set(accum_L3)
+
+    return Levels, max_accum_time, accum_time
 
 
 @partial(jax.jit, static_argnames=["ne_nn", "tmp_ne_nn", "substrate", "subcycle"])

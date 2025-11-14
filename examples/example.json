@@ -119,7 +119,10 @@
         "info_T": 1,
         "dwell_time_multiplier": 8,
         "use_txt": 0,
-        "laser_center": [2.0, 2.0, 0.0, 0, 0, 0, 0]
+        "laser_center": [2.0, 2.0, 0.0, 0, 0, 0, 0],
+        "haste": 0,
+        "loop_GOMELT": 1,
+        "record_TAM": 0
     }
 }
 

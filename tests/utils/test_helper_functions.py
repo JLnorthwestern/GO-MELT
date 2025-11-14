@@ -10,7 +10,6 @@ from go_melt.utils.helper_functions import (
     getOverlapRegion,
     static_set_in_array,
     set_in_array,
-    melting_temp,
 )
 
 
@@ -130,26 +129,6 @@ def test_static_set_in_array_and_set_in_array():
     res_set = set_in_array(arr2, indices, vals)
     expected_set = arr2.at[indices].set(vals)
     assert jnp.array_equal(res_set, expected_set)
-
-
-def test_melting_temp_updates():
-    # temps: numpy array, some above T_melt
-    temps = np.array([300.0, 350.0, 250.0, 400.0])
-    delt_T = 2.5
-    T_melt = 300.0
-    # accum_time is a jnp array of zeros
-    accum_time = jnp.zeros(4)
-    # indices we want to update: all indices
-    idx = jnp.arange(4)
-    updated = melting_temp(temps, delt_T, T_melt, accum_time, idx)
-    # temps > T_melt: positions 1 and 3 (350,400); temps == T_melt should be False -> only > counts
-    expected = jnp.array([0.0, delt_T, 0.0, delt_T])
-    assert jnp.allclose(updated, expected)
-
-    # calling again with same temps should accumulate
-    updated2 = melting_temp(temps, delt_T, T_melt, updated, idx)
-    expected2 = expected + expected
-    assert jnp.allclose(updated2, expected2)
 
 
 if __name__ == "__main__":

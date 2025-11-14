@@ -156,19 +156,3 @@ def set_in_array(input_array: jnp.ndarray, indices: jnp.ndarray, values: jnp.nda
     Replace a slice of the input_array array with new values.
     """
     return input_array.at[indices].set(values)
-
-
-def melting_temp(
-    temps: np.ndarray,
-    delt_T: float,
-    T_melt: float,
-    accum_time: jnp.ndarray,
-    idx: jnp.ndarray,
-) -> jnp.ndarray:
-    """Add delt_T to accum_time at indices where temps exceed T_melt.
-
-    temps is a NumPy array mask; accum_time is a JAX array updated functionally.
-    """
-    T_above_threshold = np.array(temps > T_melt)
-    accum_time = accum_time.at[idx].add(T_above_threshold * delt_T)
-    return accum_time

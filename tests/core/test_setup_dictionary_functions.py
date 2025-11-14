@@ -39,10 +39,10 @@ def test_SetupStaticNodesAndElements():
 
 
 def test_SetupStaticSubcycle():
-    nonmesh = {"subcycle_num_L2": 2, "subcycle_num_L3": 3}
+    nonmesh = {"subcycle_num_L2": 2, "subcycle_num_L3": 3, "loop_GOMELT": 1}
     result = SetupStaticSubcycle(nonmesh)
     # Expect (2, 3, 6, 2.0, 3.0, 6.0)
-    assert result == (2, 3, 6, 2.0, 3.0, 6.0)
+    assert result == (2, 3, 6, 2.0, 3.0, 6.0, 1)
 
 
 def test_dict2obj_and_structure_to_dict_roundtrip():

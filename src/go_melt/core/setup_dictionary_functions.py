@@ -317,6 +317,15 @@ def SetupNonmesh(nonmesh_input: dict) -> dict:
     # Laser center
     Nonmesh.laser_center = nonmesh_input.get("laser_center", [])
 
+    # Hybrid Algorithm for Surrogate Temperature Evaluation
+    Nonmesh.haste = nonmesh_input.get("haste", 0)
+
+    # Number of subcycled predictor-corrector loops to execute on GPU before CPU return
+    Nonmesh.loop_GOMELT = nonmesh_input.get("loop_GOMELT", 1)
+
+    # Recording data for Time-Above-Melting (TAM)
+    Nonmesh.record_TAM = nonmesh_input.get("record_TAM", 0)
+
     # Create output directory if it doesn't exist
     if not os.path.exists(Nonmesh.save_path):
         os.makedirs(Nonmesh.save_path)
@@ -339,7 +348,7 @@ def SetupStaticNodesAndElements(Levels: list[dict]) -> tuple[int]:
 
 def SetupStaticSubcycle(
     nonmesh: dict[str, int],
-) -> tuple[int, int, int, float, float, float]:
+) -> tuple[int, int, int, float, float, float, int]:
     """
     Extract and compute static subcycle values from the non-mesh configuration.
     """
@@ -359,6 +368,7 @@ def SetupStaticSubcycle(
         subcycles_L2_float,
         subcycles_L3_float,
         total_subcycles_float,
+        nonmesh["loop_GOMELT"],
     )
 
 

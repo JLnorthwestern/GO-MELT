@@ -18,8 +18,11 @@ def test_stepGOMELT():
             dt,
             laser_power,
             substrate,
+            max_accum_time,
+            accum_time,
+            record_accum,
         ) = dill.load(f)
-    Levels, all_reset = stepGOMELT(
+    Levels, max_accum_time, accum_time = stepGOMELT(
         Levels,
         ne_nn,
         tmp_ne_nn,
@@ -30,6 +33,9 @@ def test_stepGOMELT():
         dt,
         laser_power,
         substrate,
+        max_accum_time,
+        accum_time,
+        record_accum,
     )
     assert isinstance(Levels, list)
 
