@@ -1,5 +1,6 @@
 import jax
 import jax.numpy as jnp
+import numpy as np
 from go_melt.utils.interpolation_functions import (
     interpolatePoints,
     interpolatePointsMatrix,
@@ -9,41 +10,33 @@ from go_melt.utils.helper_functions import getOverlapRegion
 
 
 @jax.jit
-def moveEverything(v, vstart, Levels, move_v, LInterp, L1L2Eratio, L2L3Eratio, height):
+def moveEverything(
+    laser_pos_current: jnp.ndarray,
+    laser_pos_initial: np.ndarray,
+    Levels: list[dict],
+    elem_shift_from_initial: list[jnp.ndarray],
+    interlevel_interp_mats: list[list[jnp.ndarray]],
+    elem_size_ratios_L1_L2: list[int],
+    elem_size_ratios_L2_L3: list[int],
+    layer_thickness: float,
+) -> tuple[dict, list, list[list[jnp.ndarray]], list[jnp.ndarray]]:
     """
     Move the multilevel mesh system in response to laser motion.
 
     This function updates node coordinates, interpolates temperature and subgrid
     fields, and recalculates shape functions for Levels 1-3 based on the laser's
     movement vector.
-
-    Parameters:
-    v (array): Current laser position.
-    vstart (array): Initial laser position.
-    Levels (dict): Multilevel mesh and field data.
-    move_v (array): Previous movement vector (used for scaling).
-    LInterp (list): Interpolation matrices between levels.
-    L1L2Eratio (list): Element ratio from Level 1 to Level 2 in [x, y, z].
-    L2L3Eratio (list): Element ratio from Level 2 to Level 3 in [x, y, z].
-    height (float): Layer height in mm.
-
-    Returns:
-    tuple:
-        - Levels (dict): Updated mesh and field data.
-        - Shapes (list): Updated shape function data.
-        - LInterp (list): Updated interpolation matrices.
-        - move_v (array): Updated movement vector.
     """
     # --- Move Level 3 (finest) ---
-    vtot = v - vstart
-    v_L3_constrained = jit_constrain_v(vtot, Levels[3])
+    laser_shift_from_initial = laser_pos_current - laser_pos_initial
+    displacement_L3_constrained = jit_constrain_v(laser_shift_from_initial, Levels[3])
 
     # Move mesh and update coordinates
     new_coords_L3, _ = move_fine_mesh(
-        Levels[3]["init_node_coors"], Levels[2]["h"], v_L3_constrained
+        Levels[3]["init_node_coors"], Levels[2]["h"], displacement_L3_constrained
     )
     Levels[3] = update_overlap_nodes_coords(
-        Levels[3], v_L3_constrained, Levels[2]["h"], [1, 1, 1]
+        Levels[3], displacement_L3_constrained, Levels[2]["h"], ele_ratio=[1, 1, 1]
     )
 
     # Interpolate temperature and subgrid fields
@@ -55,16 +48,18 @@ def moveEverything(v, vstart, Levels, move_v, LInterp, L1L2Eratio, L2L3Eratio, h
     Levels[3]["node_coords"] = new_coords_L3
 
     # --- Move Level 2 ---
-    v_L2_constrained = jit_constrain_v(vtot, Levels[2])
-    h_L1 = Levels[1]["h"][:2]
-    h_L1.append(jnp.array(height))
-    new_coords_L2, move_v = move_fine_mesh(
-        Levels[2]["init_node_coors"], h_L1, v_L2_constrained
+    displacement_L2_constrained = jit_constrain_v(laser_shift_from_initial, Levels[2])
+    elem_sizes_L1 = Levels[1]["h"][:2]
+    elem_sizes_L1.append(jnp.array(layer_thickness))
+    new_coords_L2, elem_shift_from_initial = move_fine_mesh(
+        Levels[2]["init_node_coors"], elem_sizes_L1, displacement_L2_constrained
     )
-    move_v = [move_v[i] * L1L2Eratio[i] for i in range(3)]
+    elem_shift_from_initial = [
+        elem_shift_from_initial[i] * elem_size_ratios_L1_L2[i] for i in range(3)
+    ]
 
     Levels[2] = update_overlap_nodes_coords_L1L2(
-        Levels[2], v_L2_constrained, Levels[1]["h"], height
+        Levels[2], displacement_L2_constrained, Levels[1]["h"], layer_thickness
     )
 
     # Interpolate temperature and subgrid fields
@@ -76,28 +71,36 @@ def moveEverything(v, vstart, Levels, move_v, LInterp, L1L2Eratio, L2L3Eratio, h
     Levels[2]["node_coords"] = new_coords_L2
 
     # Recompute shape functions and interpolation matrix
-    L2L1Shape = computeCoarseFineShapeFunctions(Levels[1], Levels[2])
-    LInterp[0] = interpolatePointsMatrix(Levels[1], new_coords_L2)
+    shape_L2_to_L1 = computeCoarseFineShapeFunctions(Levels[1], Levels[2])
+    interlevel_interp_mats[0] = interpolatePointsMatrix(Levels[1], new_coords_L2)
 
     # --- Update Level 3 overlap nodes after Level 2 move ---
     Levels[3]["overlapNodes"] = [
-        Levels[3]["overlapNodes"][i] - move_v[i] for i in range(3)
+        Levels[3]["overlapNodes"][i] - elem_shift_from_initial[i] for i in range(3)
     ]
 
     # --- Update Level 0 (global) ---
     Levels[0] = update_overlap_nodes_coords(
-        Levels[0], v_L3_constrained, Levels[2]["h"], L2L3Eratio
+        Levels[0], displacement_L3_constrained, Levels[2]["h"], elem_size_ratios_L2_L3
     )
     Levels[0] = update_overlap_nodes_coords_L2(
         Levels[0],
-        v_L2_constrained,
+        displacement_L2_constrained,
         [Levels[1]["h"][0], Levels[1]["h"][1], Levels[2]["h"][2]],
-        [L1L2Eratio[0] * L2L3Eratio[0], L1L2Eratio[1] * L2L3Eratio[1], L2L3Eratio[2]],
+        [
+            elem_size_ratios_L1_L2[0] * elem_size_ratios_L2_L3[0],
+            elem_size_ratios_L1_L2[1] * elem_size_ratios_L2_L3[1],
+            elem_size_ratios_L2_L3[2],
+        ],
     )
 
     # Track z-direction movement only for Level 0
-    Levels[0]["overlapNodes"][2] -= move_v[2] * L2L3Eratio[2]
-    Levels[0]["overlapNodes_L2"][2] -= move_v[2] * L2L3Eratio[2]
+    Levels[0]["overlapNodes"][2] -= (
+        elem_shift_from_initial[2] * elem_size_ratios_L2_L3[2]
+    )
+    Levels[0]["overlapNodes_L2"][2] -= (
+        elem_shift_from_initial[2] * elem_size_ratios_L2_L3[2]
+    )
 
     # Update overlap indices
     Levels[0]["idx"] = getOverlapRegion(
@@ -113,35 +116,40 @@ def moveEverything(v, vstart, Levels, move_v, LInterp, L1L2Eratio, L2L3Eratio, h
     Levels[3]["S2"] = Levels[3]["S2"].at[:].set(Levels[0]["S2"][Levels[0]["idx"]])
 
     # Recompute shape functions for updated meshes
-    L3L1Shape = computeCoarseFineShapeFunctions(Levels[1], Levels[3])
-    L3L2Shape = computeCoarseFineShapeFunctions(Levels[2], Levels[3])
-    LInterp[1] = interpolatePointsMatrix(Levels[2], new_coords_L3)
+    shape_L3_to_L1 = computeCoarseFineShapeFunctions(Levels[1], Levels[3])
+    shape_L3_to_L2 = computeCoarseFineShapeFunctions(Levels[2], Levels[3])
+    interlevel_interp_mats[1] = interpolatePointsMatrix(Levels[2], new_coords_L3)
 
-    Shapes = [L2L1Shape, L3L1Shape, L3L2Shape]
-    return Levels, Shapes, LInterp, move_v
+    Shapes = [shape_L2_to_L1, shape_L3_to_L1, shape_L3_to_L2]
+    return (
+        Levels,
+        Shapes,
+        interlevel_interp_mats,
+        elem_shift_from_initial,
+    )
 
 
 @jax.jit
-def move_fine_mesh(node_coords, element_size, v):
+def move_fine_mesh(node_coords, element_size, laser_pos_current):
     """
     Shift a structured fine mesh in space based on a displacement vector.
 
     This function computes the new coordinates of a structured fine mesh
     by translating it in the x, y, and z directions according to the
-    displacement vector `v`, scaled by the element size.
+    displacement vector `laser_pos_current`, scaled by the element size.
 
     Parameters:
     node_coords (list): Original node coordinates [x, y, z] as 1D arrays.
     element_size (list): Element sizes [hx, hy, hz] in each direction.
-    v (array): Displacement vector [vx, vy, vz].
+    laser_pos_current (array): Displacement vector [vx, vy, vz].
 
     Returns:
     list: New node coordinates [xnf_x, xnf_y, xnf_z] after translation.
     list: Integer shift indices [vx_, vy_, vz_] used for the translation.
     """
-    vx_ = (v[0] / element_size[0] + 1e-2).astype(int)
-    vy_ = (v[1] / element_size[1] + 1e-2).astype(int)
-    vz_ = (v[2] / element_size[2] + 1e-2).astype(int)
+    vx_ = (laser_pos_current[0] / element_size[0] + 1e-2).astype(int)
+    vy_ = (laser_pos_current[1] / element_size[1] + 1e-2).astype(int)
+    vz_ = (laser_pos_current[2] / element_size[2] + 1e-2).astype(int)
 
     xnf_x = node_coords[0] + element_size[0] * vx_
     xnf_y = node_coords[1] + element_size[1] * vy_
@@ -181,15 +189,15 @@ def find_max_const(CoarseLevel, FinerLevel):
 
 
 @jax.jit
-def jit_constrain_v(vtot, Level):
+def jit_constrain_v(laser_shift_from_initial, Level):
     """
     Constrain a 3D vector within the bounding box defined in the mesh level.
 
-    This function clips each component of the input vector `vtot` to lie
+    This function clips each component of the input vector `laser_shift_from_initial` to lie
     within the bounds specified in `Level["bounds"]`.
 
     Parameters:
-    vtot (list): A list of 3 elements [vx, vy, vz] representing a 3D vector.
+    laser_shift_from_initial (list): A list of 3 elements [vx, vy, vz] representing a 3D vector.
     Level (dict): Contains bounding box limits under:
                   - Level["bounds"]["ix"]: (xmin, xmax)
                   - Level["bounds"]["iy"]: (ymin, ymax)
@@ -198,12 +206,24 @@ def jit_constrain_v(vtot, Level):
     Returns:
     list: Clipped 3D vector [vx_clipped, vy_clipped, vz_clipped].
     """
-    vtot = [
-        jnp.clip(vtot[0], Level["bounds"]["ix"][0], Level["bounds"]["ix"][1]),
-        jnp.clip(vtot[1], Level["bounds"]["iy"][0], Level["bounds"]["iy"][1]),
-        jnp.clip(vtot[2], Level["bounds"]["iz"][0], Level["bounds"]["iz"][1]),
+    laser_shift_from_initial = [
+        jnp.clip(
+            laser_shift_from_initial[0],
+            Level["bounds"]["ix"][0],
+            Level["bounds"]["ix"][1],
+        ),
+        jnp.clip(
+            laser_shift_from_initial[1],
+            Level["bounds"]["iy"][0],
+            Level["bounds"]["iy"][1],
+        ),
+        jnp.clip(
+            laser_shift_from_initial[2],
+            Level["bounds"]["iz"][0],
+            Level["bounds"]["iz"][1],
+        ),
     ]
-    return vtot
+    return laser_shift_from_initial
 
 
 @jax.jit
