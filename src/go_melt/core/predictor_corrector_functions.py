@@ -35,8 +35,17 @@ from .data_structures import (
 
 @partial(jax.jit, static_argnames=["ne_nn", "tmp_ne_nn", "substrate"])
 def stepGOMELT(
-    Levels, ne_nn, tmp_ne_nn, Shapes, LInterp, v, properties, dt, laserP, substrate
-):
+    Levels: list[dict],
+    ne_nn: tuple[int],
+    tmp_ne_nn: tuple[int],
+    Shapes: list[list],
+    LInterp: list[list],
+    laser_position: jnp.ndarray,
+    properties: dict,
+    dt: jnp.ndarray,
+    laser_power: jnp.ndarray,
+    substrate: tuple[int],
+) -> tuple[dict, jnp.ndarray]:
     """
     Perform a full explicit time step for the multilevel GOMELT simulation.
 
@@ -48,23 +57,6 @@ def stepGOMELT(
       5. Compute new Tprime fields and updated volumetric corrections.
       6. Corrector step: solve temperature fields again using updated corrections.
       7. Update Tprime and temperature fields for the next time step.
-
-    Parameters:
-    Levels (dict): Multilevel mesh and field data.
-    ne_nn (list): Total number of elements and nodes for each level.
-    tmp_ne_nn (list): Active element/node counts for Level 1 (based on layer).
-    Shapes (list): Shape function data for interpolation between levels.
-    LInterp (list): Interpolation matrices between levels.
-    v (array): Current laser position.
-    properties (dict): Material and simulation properties.
-    dt (float): Time step size.
-    laserP (float): Laser power.
-    substrate (array): Node indices defining the substrate region.
-
-    Returns:
-    tuple:
-        - Levels (dict): Updated multilevel data with new temperatures and Tprime fields.
-        - _resetmask (array): Boolean mask indicating newly activated melt regions.
     """
     # Store previous melt state for comparison
     preS2 = Levels[3]["S2"]
@@ -76,7 +68,9 @@ def stepGOMELT(
     L1, L2, L3 = Levels[1], Levels[2], Levels[3]
 
     # --- Compute source terms ---
-    Fc, Fm, Ff = computeSources(L3, v, Shapes, ne_nn, properties, laserP)
+    Fc, Fm, Ff = computeSources(
+        L3, laser_position, Shapes, ne_nn, properties, laser_power
+    )
     Fc = computeConvRadBC(L1, L1["T0"], tmp_ne_nn[0], ne_nn[2], properties, Fc)
     Fm = computeConvRadBC(L2, L2["T0"], ne_nn[0], ne_nn[3], properties, Fm)
     Ff = computeConvRadBC(L3, L3["T0"], ne_nn[1], ne_nn[4], properties, Ff)
@@ -148,7 +142,7 @@ def subcycleGOMELT(
     tmp_ne_nn: tuple[int],
     laser_position: jnp.ndarray,
     properties: dict,
-    laserP: jnp.ndarray,
+    laser_powers: jnp.ndarray,
     subcycle: tuple[int, int, int, float, float, float],
     max_accum_L3: jnp.ndarray,
     accum_L3: jnp.ndarray,
@@ -160,8 +154,16 @@ def subcycleGOMELT(
     using nested subcycling and subgrid scale corrections. It includes both the
     predictor and corrector phases, updating temperature fields and phase states.
     """
+    # Predictor Phase
     L3rhocp_L1, L2rhocp_L1, L1k, L1rhocp, L1F, L1V, L1T = computeLevel1predictor(
-        Levels, substrate, properties, Shapes, ne_nn, tmp_ne_nn, laser_position, laserP
+        Levels,
+        substrate,
+        properties,
+        Shapes,
+        ne_nn,
+        tmp_ne_nn,
+        laser_position,
+        laser_powers,
     )
 
     # --- Subcycle Level 2 ---
@@ -173,7 +175,6 @@ def subcycleGOMELT(
         Levels[3]["S1"],
     )
 
-    # Run Level 2 subcycling loop
     ctx = SubcycleContext_Predictor(
         Levels,
         ne_nn,
@@ -181,7 +182,7 @@ def subcycleGOMELT(
         substrate,
         LInterp,
         laser_position,
-        laserP,
+        laser_powers,
         subcycle,
         properties,
         L1T,
@@ -194,9 +195,9 @@ def subcycleGOMELT(
     L2T = result_L2carry.T0
     L3Tp = result_L2carry.L3Tprime0
     L3Tp_L2 = history_L2carry.L3Tprime0
-
-    # --- Level 2 Tprime and Level 1 Corrector Update ---
     L2Tp, L1T = getNewTprime(Levels[2], L2T, L1T, Levels[1], LInterp[0])
+
+    # Corrector Phase
     L1V = computeL1TprimeTerms_Part2(
         Levels,
         ne_nn,
@@ -239,7 +240,7 @@ def subcycleGOMELT(
         substrate,
         LInterp,
         laser_position,
-        laserP,
+        laser_powers,
         subcycle,
         properties,
         L1T,
@@ -261,12 +262,10 @@ def subcycleGOMELT(
     max_accum_L3 = final_L2carry.max_accum
     accum_L3 = final_L2carry.accum
 
-    # History arrays → access by attribute
     L2all = L2_hist.T0  # full time series of Level 2 temperatures
     L3all = L2_hist.L3T0  # full time series of Level 3 temperatures
     L3pall = L2_hist.L3Tprime0  # full time series of Level 3 Tprime
 
-    # --- Final Tprime and Phase Updates ---
     Levels[2]["Tprime0"], Levels[1]["T0"] = getNewTprime(
         Levels[2], Levels[2]["T0"], L1T, Levels[1], LInterp[0]
     )
@@ -278,7 +277,14 @@ def subcycleGOMELT(
 
 
 def computeLevel1predictor(
-    Levels, substrate, properties, Shapes, ne_nn, tmp_ne_nn, laser_position, laserP
+    Levels,
+    substrate,
+    properties,
+    Shapes,
+    ne_nn,
+    tmp_ne_nn,
+    laser_position,
+    laser_powers,
 ) -> tuple:
     """
     Compute Level 1 temperature predictor and return all intermediate outputs
@@ -308,7 +314,7 @@ def computeLevel1predictor(
 
     # --- Level 1 Source and Subgrid Terms ---
     L1F = computeLevelSource(
-        Levels, ne_nn, laser_position, Shapes[1], properties, laserP
+        Levels, ne_nn, laser_position, Shapes[1], properties, laser_powers
     )
     L1F = computeConvRadBC(
         Levels[1], Levels[1]["T0"], tmp_ne_nn[0], ne_nn[2], properties, L1F
@@ -342,7 +348,7 @@ def compute_Level2_step(
     ne_nn: tuple[int],
     laser_position: jnp.ndarray,
     Shapes: list[list],
-    laserP: jnp.ndarray,
+    laser_powers: jnp.ndarray,
     L1T: jnp.ndarray,
 ):
     # --- Boundary interpolation weights ---
@@ -365,7 +371,12 @@ def compute_Level2_step(
 
     # --- Source Term ---
     L2F = computeLevelSource(
-        Levels, ne_nn, laser_position[Lidx, :], Shapes[2], properties, laserP[Lidx]
+        Levels,
+        ne_nn,
+        laser_position[Lidx, :],
+        Shapes[2],
+        properties,
+        laser_powers[Lidx],
     )
     L2F = computeConvRadBC(
         Levels[2],
@@ -395,7 +406,7 @@ def compute_Level3_step(
     Levels: list[dict],
     laser_position: jnp.ndarray,
     ne_nn: tuple[int],
-    laserP: jnp.ndarray,
+    laser_powers: jnp.ndarray,
     L2T: jnp.ndarray,
     _L2carry: L2Carry_Predictor,
     LInterp: list[list],
@@ -410,7 +421,7 @@ def compute_Level3_step(
 
     # --- Source Term ---
     L3F = computeSourcesL3(
-        Levels[3], laser_position[LLidx, :], ne_nn, properties, laserP[LLidx]
+        Levels[3], laser_position[LLidx, :], ne_nn, properties, laser_powers[LLidx]
     )
     L3F = computeConvRadBC(Levels[3], _L3carry[0], ne_nn[1], ne_nn[4], properties, L3F)
 
@@ -446,7 +457,7 @@ def subcycleL2_Part1(
         substrate,
         LInterp,
         laser_position,
-        laserP,
+        laser_powers,
         subcycle,
         properties,
         L1T,
@@ -462,7 +473,7 @@ def subcycleL2_Part1(
         ne_nn,
         laser_position,
         Shapes,
-        laserP,
+        laser_powers,
         L1T,
     )
 
@@ -494,7 +505,7 @@ def subcycleL2_Part1(
             Levels,
             laser_position,
             ne_nn,
-            laserP,
+            laser_powers,
             L2T,
             _L2carry,
             LInterp,
@@ -527,7 +538,7 @@ def subcycleL2_Part2(
         substrate,
         LInterp,
         laser_position,
-        laserP,
+        laser_powers,
         subcycle,
         properties,
         L1T,
@@ -543,7 +554,7 @@ def subcycleL2_Part2(
         ne_nn,
         laser_position,
         Shapes,
-        laserP,
+        laser_powers,
         L1T,
     )
 
@@ -587,7 +598,7 @@ def subcycleL2_Part2(
             Levels,
             laser_position,
             ne_nn,
-            laserP,
+            laser_powers,
             L2T,
             _L2carry,
             LInterp,
