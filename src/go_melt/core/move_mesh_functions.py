@@ -36,7 +36,10 @@ def moveEverything(
         Levels[3]["init_node_coors"], Levels[2]["h"], displacement_L3_constrained
     )
     Levels[3] = update_overlap_nodes_coords(
-        Levels[3], displacement_L3_constrained, Levels[2]["h"], ele_ratio=[1, 1, 1]
+        Levels[3],
+        displacement_L3_constrained,
+        Levels[2]["h"],
+        elem_size_ratios=[1, 1, 1],
     )
 
     # Interpolate temperature and subgrid fields
@@ -130,83 +133,43 @@ def moveEverything(
 
 
 @jax.jit
-def move_fine_mesh(node_coords, element_size, laser_pos_current):
+def move_fine_mesh(
+    node_coords: list[jnp.ndarray],
+    elem_sizes: list[jnp.ndarray],
+    laser_pos_current: list[jnp.ndarray],
+) -> tuple[list[jnp.ndarray], list[jnp.ndarray]]:
     """
     Shift a structured fine mesh in space based on a displacement vector.
 
     This function computes the new coordinates of a structured fine mesh
     by translating it in the x, y, and z directions according to the
     displacement vector `laser_pos_current`, scaled by the element size.
-
-    Parameters:
-    node_coords (list): Original node coordinates [x, y, z] as 1D arrays.
-    element_size (list): Element sizes [hx, hy, hz] in each direction.
-    laser_pos_current (array): Displacement vector [vx, vy, vz].
-
-    Returns:
-    list: New node coordinates [xnf_x, xnf_y, xnf_z] after translation.
-    list: Integer shift indices [vx_, vy_, vz_] used for the translation.
     """
-    vx_ = (laser_pos_current[0] / element_size[0] + 1e-2).astype(int)
-    vy_ = (laser_pos_current[1] / element_size[1] + 1e-2).astype(int)
-    vz_ = (laser_pos_current[2] / element_size[2] + 1e-2).astype(int)
+    shift_x = (laser_pos_current[0] / elem_sizes[0] + 1e-2).astype(int)
+    shift_y = (laser_pos_current[1] / elem_sizes[1] + 1e-2).astype(int)
+    shift_z = (laser_pos_current[2] / elem_sizes[2] + 1e-2).astype(int)
 
-    xnf_x = node_coords[0] + element_size[0] * vx_
-    xnf_y = node_coords[1] + element_size[1] * vy_
-    xnf_z = node_coords[2] + element_size[2] * vz_
+    node_coords_new_x = node_coords[0] + elem_sizes[0] * shift_x
+    node_coords_new_y = node_coords[1] + elem_sizes[1] * shift_y
+    node_coords_new_z = node_coords[2] + elem_sizes[2] * shift_z
 
-    return [xnf_x, xnf_y, xnf_z], [vx_, vy_, vz_]
-
-
-def find_max_const(CoarseLevel, FinerLevel):
-    """
-    Compute the maximum number of elements the finer level domain can move
-    within the bounds of the coarser level domain in each direction.
-
-    This function calculates how many elements the finer mesh can shift
-    in the positive and negative directions (east/west, north/south, top/bottom)
-    without exceeding the bounds of the coarser mesh.
-
-    Parameters:
-    CoarseLevel (object): Object with `bounds` attribute containing:
-                          - bounds.x, bounds.y, bounds.z: tuples (min, max)
-    FinerLevel (object): Object with `bounds` attribute structured similarly.
-
-    Returns:
-    tuple: Three lists representing allowable movement in:
-           - x-direction: [west, east]
-           - y-direction: [south, north]
-           - z-direction: [bottom, top]
-    """
-    iE = CoarseLevel.bounds.x[1] - FinerLevel.bounds.x[1]  # Elements to east
-    iN = CoarseLevel.bounds.y[1] - FinerLevel.bounds.y[1]  # Elements to north
-    iT = CoarseLevel.bounds.z[1] - FinerLevel.bounds.z[1]  # Elements to top
-    iW = CoarseLevel.bounds.x[0] - FinerLevel.bounds.x[0]  # Elements to west
-    iS = CoarseLevel.bounds.y[0] - FinerLevel.bounds.y[0]  # Elements to south
-    iB = CoarseLevel.bounds.z[0] - FinerLevel.bounds.z[0]  # Elements to bottom
-
-    return [iW, iE], [iS, iN], [iB, iT]
+    return (
+        [node_coords_new_x, node_coords_new_y, node_coords_new_z],
+        [shift_x, shift_y, shift_z],
+    )
 
 
 @jax.jit
-def jit_constrain_v(laser_shift_from_initial, Level):
+def jit_constrain_v(
+    laser_shift_from_initial: list[jnp.ndarray], Level: dict
+) -> list[jnp.ndarray, jnp.ndarray, jnp.ndarray]:
     """
     Constrain a 3D vector within the bounding box defined in the mesh level.
 
-    This function clips each component of the input vector `laser_shift_from_initial` to lie
-    within the bounds specified in `Level["bounds"]`.
-
-    Parameters:
-    laser_shift_from_initial (list): A list of 3 elements [vx, vy, vz] representing a 3D vector.
-    Level (dict): Contains bounding box limits under:
-                  - Level["bounds"]["ix"]: (xmin, xmax)
-                  - Level["bounds"]["iy"]: (ymin, ymax)
-                  - Level["bounds"]["iz"]: (zmin, zmax)
-
-    Returns:
-    list: Clipped 3D vector [vx_clipped, vy_clipped, vz_clipped].
+    This function clips each component of the input vector `laser_shift_from_initial`
+    to lie within the bounds specified in `Level["bounds"]`.
     """
-    laser_shift_from_initial = [
+    clipped_laser_shift_from_initial = [
         jnp.clip(
             laser_shift_from_initial[0],
             Level["bounds"]["ix"][0],
@@ -223,73 +186,65 @@ def jit_constrain_v(laser_shift_from_initial, Level):
             Level["bounds"]["iz"][1],
         ),
     ]
-    return laser_shift_from_initial
+    return clipped_laser_shift_from_initial
 
 
 @jax.jit
-def update_overlap_nodes_coords(Level, vcon, element_size, ele_ratio):
+def update_overlap_nodes_coords(
+    Level: dict[str, list[jnp.ndarray]],
+    displacement_constrained: list[jnp.ndarray],
+    elem_sizes: list[jnp.ndarray],
+    elem_size_ratios: list[int],
+) -> dict[str, list[jnp.ndarray]]:
     """
     Update the overlap node indices and coordinates based on a displacement vector.
 
     This function shifts the overlap region of a mesh by updating both the
-    node indices and physical coordinates using the displacement vector `vcon`.
-
-    Parameters:
-    Level (dict): Mesh level containing original overlap node indices and coordinates.
-                  - "orig_overlap_nodes": list of original node index arrays [x, y, z].
-                  - "orig_overlap_coors": list of original coordinate arrays [x, y, z].
-    vcon (array): Displacement vector [vx, vy, vz].
-    element_size (array): Element sizes [hx, hy, hz].
-    ele_ratio (array): Ratio of coarse-to-fine elements in each direction.
-
-    Returns:
-    dict: Updated Level dictionary with new "overlapNodes" and "overlapCoords".
+    node indices and physical coordinates using the displacement vector
+    `displacement_constrained`.
     """
     shift = [
-        (vcon[0] / element_size[0] + 1e-2).astype(int),
-        (vcon[1] / element_size[1] + 1e-2).astype(int),
-        (vcon[2] / element_size[2] + 1e-2).astype(int),
+        (displacement_constrained[0] / elem_sizes[0] + 1e-2).astype(int),
+        (displacement_constrained[1] / elem_sizes[1] + 1e-2).astype(int),
+        (displacement_constrained[2] / elem_sizes[2] + 1e-2).astype(int),
     ]
 
     Level["overlapNodes"] = [
-        Level["orig_overlap_nodes"][0] + ele_ratio[0] * shift[0],
-        Level["orig_overlap_nodes"][1] + ele_ratio[1] * shift[1],
-        Level["orig_overlap_nodes"][2] + ele_ratio[2] * shift[2],
+        Level["orig_overlap_nodes"][0] + elem_size_ratios[0] * shift[0],
+        Level["orig_overlap_nodes"][1] + elem_size_ratios[1] * shift[1],
+        Level["orig_overlap_nodes"][2] + elem_size_ratios[2] * shift[2],
     ]
 
     Level["overlapCoords"] = [
-        Level["orig_overlap_coors"][0] + element_size[0] * shift[0],
-        Level["orig_overlap_coors"][1] + element_size[1] * shift[1],
-        Level["orig_overlap_coors"][2] + element_size[2] * shift[2],
+        Level["orig_overlap_coors"][0] + elem_sizes[0] * shift[0],
+        Level["orig_overlap_coors"][1] + elem_sizes[1] * shift[1],
+        Level["orig_overlap_coors"][2] + elem_sizes[2] * shift[2],
     ]
 
     return Level
 
 
 @jax.jit
-def update_overlap_nodes_coords_L1L2(Level, vcon, element_size, powder_layer):
+def update_overlap_nodes_coords_L1L2(
+    Level: dict[str, list[jnp.ndarray]],
+    displacement_constrained: list[jnp.ndarray],
+    elem_sizes: list[jnp.ndarray],
+    powder_layer_thickness: float,
+) -> dict[str, list[jnp.ndarray]]:
     """
     Update overlap node indices and coordinates for Level 1/2 with powder layer offset.
 
     This function shifts the overlap region of a mesh by updating both the
-    node indices and physical coordinates using the displacement vector `vcon`,
-    accounting for an additional powder layer in the z-direction.
-
-    Parameters:
-    Level (dict): Mesh level containing original overlap node indices and coordinates.
-                  - "orig_overlap_nodes": list of original node index arrays [x, y, z].
-                  - "orig_overlap_coors": list of original coordinate arrays [x, y, z].
-    vcon (array): Displacement vector [vx, vy, vz].
-    element_size (array): Element sizes [hx, hy, hz].
-    powder_layer (float): Additional offset in the z-direction.
-
-    Returns:
-    dict: Updated Level dictionary with new "overlapNodes" and "overlapCoords".
+    node indices and physical coordinates using the displacement vector
+    `displacement_constrained`, accounting for an additional powder layer in the
+    z-direction.
     """
-    shift_x = (vcon[0] / element_size[0] + 1e-2).astype(int)
-    shift_y = (vcon[1] / element_size[1] + 1e-2).astype(int)
-    shift_z = (vcon[2] / element_size[2] + 1e-2).astype(int)
-    shift_z_p = powder_layer * (vcon[2] / powder_layer + 1e-2).astype(int)
+    shift_x = (displacement_constrained[0] / elem_sizes[0] + 1e-2).astype(int)
+    shift_y = (displacement_constrained[1] / elem_sizes[1] + 1e-2).astype(int)
+    shift_z = (displacement_constrained[2] / elem_sizes[2] + 1e-2).astype(int)
+    shift_z_p = powder_layer_thickness * (
+        displacement_constrained[2] / powder_layer_thickness + 1e-2
+    ).astype(int)
 
     Level["overlapNodes"] = [
         Level["orig_overlap_nodes"][0] + shift_x,
@@ -298,8 +253,8 @@ def update_overlap_nodes_coords_L1L2(Level, vcon, element_size, powder_layer):
     ]
 
     Level["overlapCoords"] = [
-        Level["orig_overlap_coors"][0] + element_size[0] * shift_x,
-        Level["orig_overlap_coors"][1] + element_size[1] * shift_y,
+        Level["orig_overlap_coors"][0] + elem_sizes[0] * shift_x,
+        Level["orig_overlap_coors"][1] + elem_sizes[1] * shift_y,
         Level["orig_overlap_coors"][2] + shift_z_p,
     ]
 
@@ -307,41 +262,35 @@ def update_overlap_nodes_coords_L1L2(Level, vcon, element_size, powder_layer):
 
 
 @jax.jit
-def update_overlap_nodes_coords_L2(Level, vcon, element_size, ele_ratio):
+def update_overlap_nodes_coords_L2(
+    Level: dict[str, list[jnp.ndarray]],
+    displacement_constrained: list[jnp.ndarray],
+    elem_sizes: list[jnp.ndarray],
+    elem_size_ratios: list[int],
+) -> dict[str, list[jnp.ndarray]]:
     """
     Update overlap node indices and coordinates for Level 2 based on displacement.
 
     This function shifts the overlap region of Level 2 by updating both the
-    node indices and physical coordinates using the displacement vector `vcon`
-    and the element-to-node ratio `ele_ratio`.
-
-    Parameters:
-    Level (dict): Mesh level containing original overlap node indices and coordinates.
-                - "orig_overlap_nodes_L2": list of original node index arrays [x, y, z].
-                - "orig_overlap_coors_L2": list of original coordinate arrays [x, y, z].
-    vcon (array): Displacement vector [vx, vy, vz].
-    element_size (array): Element sizes [hx, hy, hz].
-    ele_ratio (array): Ratio of coarse-to-fine elements in each direction.
-
-    Returns:
-    dict: Updated Level dictionary with new "overlapNodes_L2" and "overlapCoords_L2".
+    node indices and physical coordinates using the displacement vector
+    `displacement_constrained` and the element-to-node ratio `elem_size_ratios`.
     """
     shift = [
-        (vcon[0] / element_size[0] + 1e-2).astype(int),
-        (vcon[1] / element_size[1] + 1e-2).astype(int),
-        (vcon[2] / element_size[2] + 1e-2).astype(int),
+        (displacement_constrained[0] / elem_sizes[0] + 1e-2).astype(int),
+        (displacement_constrained[1] / elem_sizes[1] + 1e-2).astype(int),
+        (displacement_constrained[2] / elem_sizes[2] + 1e-2).astype(int),
     ]
 
     Level["overlapNodes_L2"] = [
-        Level["orig_overlap_nodes_L2"][0] + ele_ratio[0] * shift[0],
-        Level["orig_overlap_nodes_L2"][1] + ele_ratio[1] * shift[1],
-        Level["orig_overlap_nodes_L2"][2] + ele_ratio[2] * shift[2],
+        Level["orig_overlap_nodes_L2"][0] + elem_size_ratios[0] * shift[0],
+        Level["orig_overlap_nodes_L2"][1] + elem_size_ratios[1] * shift[1],
+        Level["orig_overlap_nodes_L2"][2] + elem_size_ratios[2] * shift[2],
     ]
 
     Level["overlapCoords_L2"] = [
-        Level["orig_overlap_coors_L2"][0] + element_size[0] * shift[0],
-        Level["orig_overlap_coors_L2"][1] + element_size[1] * shift[1],
-        Level["orig_overlap_coors_L2"][2] + element_size[2] * shift[2],
+        Level["orig_overlap_coors_L2"][0] + elem_sizes[0] * shift[0],
+        Level["orig_overlap_coors_L2"][1] + elem_sizes[1] * shift[1],
+        Level["orig_overlap_coors_L2"][2] + elem_sizes[2] * shift[2],
     ]
 
     return Level

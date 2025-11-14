@@ -11,6 +11,7 @@ from go_melt.core.setup_dictionary_functions import (
     dict2obj,
     structure_to_dict,
     calcStaticTmpNodesAndElements,
+    find_max_const,
 )
 
 
@@ -87,6 +88,67 @@ def test_calcStaticTmpNodesAndElements():
     # 3 * 3 * 2 = 18 active elements
     # 4 * 4 * 3 = 48 active nodes
     assert result == (18, 48)
+
+
+class DummyBounds:
+    def __init__(self, x, y, z):
+        self.x = x
+        self.y = y
+        self.z = z
+
+
+class DummyLevel:
+    def __init__(self, bounds):
+        self.bounds = bounds
+
+
+def test_find_max_const_finer_inside_coarse():
+    coarse = DummyLevel(DummyBounds(x=(0, 10), y=(0, 10), z=(0, 10)))
+    finer = DummyLevel(DummyBounds(x=(2, 8), y=(3, 7), z=(1, 9)))
+
+    shifts = find_max_const(coarse, finer)
+    # West shift: coarse.x0 - finer.x0 = 0 - 2 = -2
+    # East shift: coarse.x1 - finer.x1 = 10 - 8 = 2
+    assert shifts[0] == [-2, 2]
+    # South shift: 0 - 3 = -3, North shift: 10 - 7 = 3
+    assert shifts[1] == [-3, 3]
+    # Bottom shift: 0 - 1 = -1, Top shift: 10 - 9 = 1
+    assert shifts[2] == [-1, 1]
+
+
+def test_find_max_const_finer_equal_to_coarse():
+    coarse = DummyLevel(DummyBounds(x=(0, 5), y=(0, 5), z=(0, 5)))
+    finer = DummyLevel(DummyBounds(x=(0, 5), y=(0, 5), z=(0, 5)))
+
+    shifts = find_max_const(coarse, finer)
+    # All shifts should be zero
+    assert shifts == ([0, 0], [0, 0], [0, 0])
+
+
+def test_find_max_const_finer_extends_beyond_coarse():
+    coarse = DummyLevel(DummyBounds(x=(0, 5), y=(0, 5), z=(0, 5)))
+    finer = DummyLevel(DummyBounds(x=(-1, 6), y=(-2, 7), z=(-3, 8)))
+
+    shifts = find_max_const(coarse, finer)
+    # West shift: 0 - (-1) = 1, East shift: 5 - 6 = -1
+    assert shifts[0] == [1, -1]
+    # South shift: 0 - (-2) = 2, North shift: 5 - 7 = -2
+    assert shifts[1] == [2, -2]
+    # Bottom shift: 0 - (-3) = 3, Top shift: 5 - 8 = -3
+    assert shifts[2] == [3, -3]
+
+
+def test_find_max_const_finer_completely_inside_coarse():
+    coarse = DummyLevel(DummyBounds(x=(0, 20), y=(0, 20), z=(0, 20)))
+    finer = DummyLevel(DummyBounds(x=(5, 15), y=(5, 15), z=(5, 15)))
+
+    shifts = find_max_const(coarse, finer)
+    # West shift: 0 - 5 = -5, East shift: 20 - 15 = 5
+    assert shifts[0] == [-5, 5]
+    # South shift: 0 - 5 = -5, North shift: 20 - 15 = 5
+    assert shifts[1] == [-5, 5]
+    # Bottom shift: 0 - 5 = -5, Top shift: 20 - 15 = 5
+    assert shifts[2] == [-5, 5]
 
 
 if __name__ == "__main__":

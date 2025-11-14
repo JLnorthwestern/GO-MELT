@@ -3,7 +3,6 @@ import os
 import jax.numpy as jnp
 import copy
 from .boundary_condition_functions import getBCindices
-from .move_mesh_functions import find_max_const
 from .mesh_functions import calc_length_h, calcNumNodes, createMesh3D
 from .data_structures import obj
 from go_melt.utils.helper_functions import (
@@ -414,3 +413,28 @@ def calcStaticTmpNodesAndElements(
     ).tolist()
 
     return (active_Level1_elements, active_Level1_nodes)
+
+
+def find_max_const(
+    coarse_level: obj, finer_level: obj
+) -> tuple[list[int], list[int], list[int]]:
+    """
+    Compute the maximum number of elements the finer level domain can move
+    within the bounds of the coarser level domain in each direction.
+
+    This function calculates how many elements the finer mesh can shift
+    in the positive and negative directions (east/west, north/south, top/bottom)
+    without exceeding the bounds of the coarser mesh.
+    """
+    east_shift = coarse_level.bounds.x[1] - finer_level.bounds.x[1]
+    north_shift = coarse_level.bounds.y[1] - finer_level.bounds.y[1]
+    top_shift = coarse_level.bounds.z[1] - finer_level.bounds.z[1]
+    west_shift = coarse_level.bounds.x[0] - finer_level.bounds.x[0]
+    south_shift = coarse_level.bounds.y[0] - finer_level.bounds.y[0]
+    bottom_shift = coarse_level.bounds.z[0] - finer_level.bounds.z[0]
+
+    return (
+        [west_shift, east_shift],
+        [south_shift, north_shift],
+        [bottom_shift, top_shift],
+    )
