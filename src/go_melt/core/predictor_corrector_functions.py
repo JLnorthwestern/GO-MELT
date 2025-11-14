@@ -132,131 +132,47 @@ def stepGOMELT(
 
 @partial(jax.jit, static_argnames=["ne_nn", "tmp_ne_nn", "substrate", "subcycle"])
 def subcycleGOMELT(
-    Levels,
-    ne_nn,
-    Shapes,
-    substrate,
-    LInterp,
-    tmp_ne_nn,
-    laser_position,
-    properties,
-    laserP,
-    subcycle,
-    max_accum_L3,
-    accum_L3,
-):
+    Levels: list[dict],
+    ne_nn: tuple[int],
+    Shapes: list[list],
+    substrate: tuple[int],
+    LInterp: list[list],
+    tmp_ne_nn: tuple[int],
+    laser_position: jnp.ndarray,
+    properties: dict,
+    laserP: jnp.ndarray,
+    subcycle: tuple[int, int, int, float, float, float],
+    max_accum_L3: jnp.ndarray,
+    accum_L3: jnp.ndarray,
+) -> tuple[list[dict], jnp.ndarray, jnp.ndarray, jnp.ndarray, jnp.ndarray, jnp.ndarray]:
     """
     Perform a full predictor-corrector subcycling step for the GO-MELT model.
 
     This function executes the multilevel thermal update across Levels 1, 2, and 3,
     using nested subcycling and subgrid scale corrections. It includes both the
     predictor and corrector phases, updating temperature fields and phase states.
-
-    Parameters:
-    Levels (list of dict): Multilevel simulation state.
-    ne_nn (tuple): Mesh metadata for all levels.
-    Shapes (tuple): Shape function data for subgrid projections.
-    substrate (tuple): Substrate node indices for each level.
-    LInterp (tuple): Interpolation matrices between levels.
-    tmp_ne_nn (tuple): Level 1 metadata (element count, inactive node index).
-    laser_position (array): Laser positions for each substep.
-    properties (dict): Material and process properties.
-    laserP (array): Laser power at each substep.
-    subcycle (tuple): Subcycling parameters (L2 steps, L3 steps per L2, etc.).
-    max_accum_L3 (array): Max accumulated melt time for Level 3 nodes.
-    accum_L3 (array): Current accumulated melt time for Level 3 nodes.
-
-    Returns:
-    tuple: Updated Levels, Level 2 and 3 temperature histories, Level 3 Tprime history,
-           updated max_accum_L3 and accum_L3.
     """
-    # --- Level 1 Material Properties ---
-    _, _, L3k_L1, L3rhocp_L1 = computeStateProperties(
-        Levels[3]["T0"], Levels[3]["S1"], properties, substrate[3]
+    L3rhocp_L1, L2rhocp_L1, L1k, L1rhocp, L1F, L1V, L1T = computeLevel1predictor(
+        Levels, substrate, properties, Shapes, ne_nn, tmp_ne_nn, laser_position, laserP
     )
-    _, _, L2k_L1, L2rhocp_L1 = computeStateProperties(
-        Levels[2]["T0"], Levels[2]["S1"], properties, substrate[2]
-    )
-
-    # Update Level 1 S1 from Level 2 overlap
-    _val = interpolatePoints(Levels[2], Levels[2]["S1"], Levels[2]["overlapCoords"])
-    _idx = getOverlapRegion(
-        Levels[2]["overlapNodes"], Levels[1]["nodes"][0], Levels[1]["nodes"][1]
-    )
-    Levels[1]["S1"] = Levels[1]["S1"].at[_idx].set(_val)
-    Levels[1]["S1"] = Levels[1]["S1"].at[: substrate[1]].set(1)
-
-    _, _, L1k, L1rhocp = computeStateProperties(
-        Levels[1]["T0"], Levels[1]["S1"], properties, substrate[1]
-    )
-
-    # --- Level 1 Source and Subgrid Terms ---
-    L1F = computeLevelSource(
-        Levels, ne_nn, laser_position, Shapes[1], properties, laserP
-    )
-    L1F = computeConvRadBC(
-        Levels[1], Levels[1]["T0"], tmp_ne_nn[0], ne_nn[2], properties, L1F
-    )
-    L1V = computeL1TprimeTerms_Part1(Levels, ne_nn, L3k_L1, Shapes, L2k_L1)
-
-    # --- Level 1 Temperature Predictor ---
-    L1T = computeL1Temperature(
-        Levels,
-        ne_nn,
-        tmp_ne_nn,
-        L1F,
-        L1V,
-        L1k,
-        L1rhocp,
-        laser_position[:, 5].sum(),
-        properties,
-    )
-    L1T = jnp.maximum(properties["T_amb"], L1T)  # TFSP
 
     # --- Subcycle Level 2 ---
     def subcycleL2_Part1(_L2carry, _L2sub):
-        # Compute interpolation weights for Level 2 boundary conditions
-        alpha_L2 = (_L2sub + 1) / subcycle[3]
-        beta_L2 = 1 - alpha_L2
-
-        # Determine the laser substeps for this Level 2 subcycle
-        Lidx = _L2sub * subcycle[1] + jnp.arange(subcycle[1])
-
-        # --- Material Properties ---
-        # Compute Level 3 properties using current Level 3 temperature and phase
-        _, _, L3k_L2, _ = computeStateProperties(
-            _L2carry[2], _L2carry[4], properties, substrate[3]
-        )
-
-        # Compute Level 2 properties using current Level 2 temperature and phase
-        L2S1, _, L2k, L2rhocp = computeStateProperties(
-            _L2carry[0], _L2carry[1], properties, substrate[2]
-        )
-
-        # --- Source Term ---
-        # Compute laser source term for Level 2 using Level 3 mesh
-        L2F = computeLevelSource(
-            Levels, ne_nn, laser_position[Lidx, :], Shapes[2], properties, laserP[Lidx]
-        )
-
-        # Add convection, radiation, and evaporation boundary conditions
-        L2F = computeConvRadBC(
-            Levels[2],
-            _L2carry[0],
-            ne_nn[0],
-            ne_nn[3],
+        (Lidx, L3rhocp_L2, L2S1, L2k, L2rhocp, L2F, L2V, _BC) = compute_Level2_step(
+            _L2sub,
+            subcycle,
+            _L2carry,
             properties,
-            L2F,
+            substrate,
+            Levels,
+            ne_nn,
+            laser_position,
+            Shapes,
+            laserP,
+            L1T,
         )
-
-        # --- Subgrid Correction ---
-        # Compute divergence of subgrid heat flux from Level 3 to Level 2
-        L2V = computeL2TprimeTerms_Part1(Levels, ne_nn, _L2carry[3], L3k_L2, Shapes)
 
         # --- Temperature Solve ---
-        # Interpolate Level 1 temperature to Level 2 boundary using alpha-beta blend
-        _BC = alpha_L2 * L1T + beta_L2 * Levels[1]["T0"]
-
         # Solve Level 2 temperature using matrix-free FEM
         L2T = computeL2Temperature(
             _BC,
@@ -274,42 +190,21 @@ def subcycleGOMELT(
 
         # --- Subcycle Level 3 ---
         def subcycleL3_Part1(_L3carry, _L3sub):
-            # Compute Level 3 material properties
-            L3S1, _, L3k, L3rhocp = computeStateProperties(
-                _L3carry[0], _L3carry[1], properties, substrate[3]
-            )
-
-            # Determine laser index for this Level 3 substep
-            LLidx = _L3sub + _L2sub * subcycle[1]
-
-            # Compute laser source term for Level 3
-            L3F = computeSourcesL3(
-                Levels[3], laser_position[LLidx, :], ne_nn, properties, laserP[LLidx]
-            )
-
-            # Add convection, radiation, and evaporation boundary conditions
-            L3F = computeConvRadBC(
-                Levels[3], _L3carry[0], ne_nn[1], ne_nn[4], properties, L3F
-            )
-
-            # Interpolate Level 2 temperature to Level 3 boundary
-            alpha_L3 = (_L3sub + 1) / subcycle[4]
-            beta_L3 = 1 - alpha_L3
-            _BC = alpha_L3 * L2T + beta_L3 * _L2carry[0]
-
-            # Solve Level 3 temperature
-            L3T = computeSolutions_L3(
-                _BC,
-                LInterp[1],
+            (L3S1, L3S2, LLidx, L3T) = compute_Level3_step(
+                _L3carry,
+                properties,
+                substrate,
+                _L3sub,
+                _L2sub,
+                subcycle,
                 Levels,
+                laser_position,
                 ne_nn,
-                _L3carry[0],
-                L3F,
-                L3k,
-                L3rhocp,
-                laser_position[LLidx, 5],
+                laserP,
+                L2T,
+                _L2carry,
+                LInterp,
             )
-            L3T = jnp.maximum(properties["T_amb"], L3T)  # TFSP
 
             return ([L3T, L3S1], [L3T, L3S1])
 
@@ -366,43 +261,19 @@ def subcycleGOMELT(
 
     # --- Subcycle Level 2 ---
     def subcycleL2_Part2(_L2carry, _L2sub):
-        # Compute interpolation weights for Level 2 boundary conditions
-        alpha_L2 = (_L2sub + 1) / subcycle[3]
-        beta_L2 = 1 - alpha_L2
-
-        # Determine the laser substeps for this Level 2 subcycle
-        Lidx = _L2sub * subcycle[1] + jnp.arange(subcycle[1])
-
-        # --- Material Properties ---
-        # Compute Level 3 properties using current Level 3 temperature and phase
-        _, _, L3k_L2, L3rhocp_L2 = computeStateProperties(
-            _L2carry[2], _L2carry[4], properties, substrate[3]
-        )
-
-        # Compute Level 2 properties using current Level 2 temperature and phase
-        L2S1, _, L2k, L2rhocp = computeStateProperties(
-            _L2carry[0], _L2carry[1], properties, substrate[2]
-        )
-
-        # --- Source Term ---
-        # Compute laser source term for Level 2 using Level 3 mesh
-        L2F = computeLevelSource(
-            Levels, ne_nn, laser_position[Lidx, :], Shapes[2], properties, laserP[Lidx]
-        )
-
-        # Add convection, radiation, and evaporation boundary conditions
-        L2F = computeConvRadBC(
-            Levels[2],
-            _L2carry[0],
-            ne_nn[0],
-            ne_nn[3],
+        (Lidx, L3rhocp_L2, L2S1, L2k, L2rhocp, L2F, L2V, _BC) = compute_Level2_step(
+            _L2sub,
+            subcycle,
+            _L2carry,
             properties,
-            L2F,
+            substrate,
+            Levels,
+            ne_nn,
+            laser_position,
+            Shapes,
+            laserP,
+            L1T,
         )
-
-        # --- Subgrid Correction ---
-        # Compute divergence of subgrid heat flux from Level 3 to Level 2
-        L2V = computeL2TprimeTerms_Part1(Levels, ne_nn, _L2carry[3], L3k_L2, Shapes)
 
         # Add time derivative correction from Level 3 to Level 2
         L2V = computeL2TprimeTerms_Part2(
@@ -417,9 +288,6 @@ def subcycleGOMELT(
         )
 
         # --- Temperature Solve ---
-        # Interpolate Level 1 temperature to Level 2 boundary using alpha-beta blend
-        _BC = alpha_L2 * L1T + beta_L2 * Levels[1]["T0"]
-
         # Solve Level 2 temperature using matrix-free FEM
         L2T = computeL2Temperature(
             _BC,
@@ -437,42 +305,21 @@ def subcycleGOMELT(
 
         # --- Subcycle Level 3 ---
         def subcycleL3_Part2(_L3carry, _L3sub):
-            # Compute Level 3 material properties
-            L3S1, L3S2, L3k, L3rhocp = computeStateProperties(
-                _L3carry[0], _L3carry[1], properties, substrate[3]
-            )
-
-            # Determine laser index for this Level 3 substep
-            LLidx = _L3sub + _L2sub * subcycle[1]
-
-            # Compute laser source term for Level 3
-            L3F = computeSourcesL3(
-                Levels[3], laser_position[LLidx, :], ne_nn, properties, laserP[LLidx]
-            )
-
-            # Add convection, radiation, and evaporation boundary conditions
-            L3F = computeConvRadBC(
-                Levels[3], _L3carry[0], ne_nn[1], ne_nn[4], properties, L3F
-            )
-
-            # Interpolate Level 2 temperature to Level 3 boundary
-            alpha_L3 = (_L3sub + 1) / subcycle[4]
-            beta_L3 = 1 - alpha_L3
-            _BC = alpha_L3 * L2T + beta_L3 * _L2carry[0]
-
-            # Solve Level 3 temperature
-            L3T = computeSolutions_L3(
-                _BC,
-                LInterp[1],
+            (L3S1, L3S2, LLidx, L3T) = compute_Level3_step(
+                _L3carry,
+                properties,
+                substrate,
+                _L3sub,
+                _L2sub,
+                subcycle,
                 Levels,
+                laser_position,
                 ne_nn,
-                _L3carry[0],
-                L3F,
-                L3k,
-                L3rhocp,
-                laser_position[LLidx, 5],
+                laserP,
+                L2T,
+                _L2carry,
+                LInterp,
             )
-            L3T = jnp.maximum(properties["T_amb"], L3T)  # TFSP
 
             # --- Accumulated Melt Time Update ---
             # Reset accumulation if solid becomes liquid again
@@ -539,3 +386,167 @@ def subcycleGOMELT(
     Levels[0]["S2"] = Levels[0]["S2"].at[Levels[0]["idx"]].set(Levels[3]["S2"])
 
     return Levels, L2all, L3all, L3pall, max_accum_L3, accum_L3
+
+
+def computeLevel1predictor(
+    Levels, substrate, properties, Shapes, ne_nn, tmp_ne_nn, laser_position, laserP
+) -> tuple:
+    """
+    Compute Level 1 temperature predictor and return all intermediate outputs
+    as a tuple in the following order:
+    """
+
+    # --- Level 1 Material Properties ---
+    _, _, L3k_L1, L3rhocp_L1 = computeStateProperties(
+        Levels[3]["T0"], Levels[3]["S1"], properties, substrate[3]
+    )
+    _, _, L2k_L1, L2rhocp_L1 = computeStateProperties(
+        Levels[2]["T0"], Levels[2]["S1"], properties, substrate[2]
+    )
+
+    # --- Update Level 1 S1 from Level 2 overlap ---
+    _val = interpolatePoints(Levels[2], Levels[2]["S1"], Levels[2]["overlapCoords"])
+    _idx = getOverlapRegion(
+        Levels[2]["overlapNodes"], Levels[1]["nodes"][0], Levels[1]["nodes"][1]
+    )
+    Levels[1]["S1"] = Levels[1]["S1"].at[_idx].set(_val)
+    Levels[1]["S1"] = Levels[1]["S1"].at[: substrate[1]].set(1)
+
+    # --- Level 1 Material Properties (updated) ---
+    _, _, L1k, L1rhocp = computeStateProperties(
+        Levels[1]["T0"], Levels[1]["S1"], properties, substrate[1]
+    )
+
+    # --- Level 1 Source and Subgrid Terms ---
+    L1F = computeLevelSource(
+        Levels, ne_nn, laser_position, Shapes[1], properties, laserP
+    )
+    L1F = computeConvRadBC(
+        Levels[1], Levels[1]["T0"], tmp_ne_nn[0], ne_nn[2], properties, L1F
+    )
+    L1V = computeL1TprimeTerms_Part1(Levels, ne_nn, L3k_L1, Shapes, L2k_L1)
+
+    # --- Level 1 Temperature Predictor ---
+    L1T = computeL1Temperature(
+        Levels,
+        ne_nn,
+        tmp_ne_nn,
+        L1F,
+        L1V,
+        L1k,
+        L1rhocp,
+        laser_position[:, 5].sum(),
+        properties,
+    )
+    L1T = jnp.maximum(properties["T_amb"], L1T)  # TFSP
+
+    return (L3rhocp_L1, L2rhocp_L1, L1k, L1rhocp, L1F, L1V, L1T)
+
+
+def compute_Level2_step(
+    _L2sub,
+    subcycle,
+    _L2carry,
+    properties,
+    substrate,
+    Levels,
+    ne_nn,
+    laser_position,
+    Shapes,
+    laserP,
+    L1T,
+):
+    # Compute interpolation weights for Level 2 boundary conditions
+    alpha_L2 = (_L2sub + 1) / subcycle[3]
+    beta_L2 = 1 - alpha_L2
+    # Determine the laser substeps for this Level 2 subcycle
+    Lidx = _L2sub * subcycle[1] + jnp.arange(subcycle[1])
+
+    # --- Material Properties ---
+    # Compute Level 3 properties using current Level 3 temperature and phase
+    _, _, L3k_L2, L3rhocp_L2 = computeStateProperties(
+        _L2carry[2], _L2carry[4], properties, substrate[3]
+    )
+
+    # Compute Level 2 properties using current Level 2 temperature and phase
+    L2S1, _, L2k, L2rhocp = computeStateProperties(
+        _L2carry[0], _L2carry[1], properties, substrate[2]
+    )
+
+    # --- Source Term ---
+    # Compute laser source term for Level 2 using Level 3 mesh
+    L2F = computeLevelSource(
+        Levels, ne_nn, laser_position[Lidx, :], Shapes[2], properties, laserP[Lidx]
+    )
+
+    # Add convection, radiation, and evaporation boundary conditions
+    L2F = computeConvRadBC(
+        Levels[2],
+        _L2carry[0],
+        ne_nn[0],
+        ne_nn[3],
+        properties,
+        L2F,
+    )
+
+    # --- Subgrid Correction ---
+    # Compute divergence of subgrid heat flux from Level 3 to Level 2
+    L2V = computeL2TprimeTerms_Part1(Levels, ne_nn, _L2carry[3], L3k_L2, Shapes)
+
+    # Interpolate Level 1 temperature to Level 2 boundary using alpha-beta blend
+    _BC = alpha_L2 * L1T + beta_L2 * Levels[1]["T0"]
+
+    return (Lidx, L3rhocp_L2, L2S1, L2k, L2rhocp, L2F, L2V, _BC)
+
+
+def compute_Level3_step(
+    _L3carry,
+    properties,
+    substrate,
+    _L3sub,
+    _L2sub,
+    subcycle,
+    Levels,
+    laser_position,
+    ne_nn,
+    laserP,
+    L2T,
+    _L2carry,
+    LInterp,
+):
+    # Compute Level 3 material properties
+    L3S1, L3S2, L3k, L3rhocp = computeStateProperties(
+        _L3carry[0], _L3carry[1], properties, substrate[3]
+    )
+
+    # Determine laser index for this Level 3 substep
+    LLidx = _L3sub + _L2sub * subcycle[1]
+
+    # Compute laser source term for Level 3
+    L3F = computeSourcesL3(
+        Levels[3], laser_position[LLidx, :], ne_nn, properties, laserP[LLidx]
+    )
+
+    # Add convection, radiation, and evaporation boundary conditions
+    L3F = computeConvRadBC(Levels[3], _L3carry[0], ne_nn[1], ne_nn[4], properties, L3F)
+
+    # Interpolate Level 2 temperature to Level 3 boundary
+    alpha_L3 = (_L3sub + 1) / subcycle[4]
+    beta_L3 = 1 - alpha_L3
+    _BC = alpha_L3 * L2T + beta_L3 * _L2carry[0]
+
+    # Solve Level 3 temperature
+    L3T = computeSolutions_L3(
+        _BC,
+        LInterp[1],
+        Levels,
+        ne_nn,
+        _L3carry[0],
+        L3F,
+        L3k,
+        L3rhocp,
+        laser_position[LLidx, 5],
+    )
+    L3T = jnp.maximum(properties["T_amb"], L3T)  # TFSP
+
+    return (L3S1, L3S2, LLidx, L3T)
