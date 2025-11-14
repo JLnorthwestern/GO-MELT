@@ -290,7 +290,7 @@ def subcycleGOMELT(
             L1T,
             L3Tp_L2,
         )
-        final_L2carry, L2_hist = jax.lax.scan(
+        final_L2carry, final_history_L2carry = jax.lax.scan(
             lambda carry, sub: subcycleL2_Part2(carry, sub, ctx),
             init_L2carry,
             jnp.arange(subcycle[0]),
@@ -304,9 +304,9 @@ def subcycleGOMELT(
         Levels[3]["S1"] = final_L2carry.L3S1
         Levels[3]["S2"] = final_L2carry.L3S2
 
-        L2all = L2_hist.T0  # full time series of Level 2 temperatures
-        L3all = L2_hist.L3T0  # full time series of Level 3 temperatures
-        L3pall = L2_hist.L3Tprime0  # full time series of Level 3 Tprime
+        L2all = final_history_L2carry.T0  # full time series of Level 2 temperatures
+        L3all = final_history_L2carry.L3T0  # full time series of Level 3 temperatures
+        L3pall = final_history_L2carry.L3Tprime0  # full time series of Level 3 Tprime
 
         Levels[2]["Tprime0"], Levels[1]["T0"] = getNewTprime(
             Levels[2], Levels[2]["T0"], L1T, Levels[1], LInterp[0]
@@ -681,7 +681,7 @@ def subcycleL2_Part2(
         )
 
     # Run Level 3 subcycling loop with structured init carry
-    final_L3carry, _ = jax.lax.scan(
+    final_L3carry, final_history_L3carry = jax.lax.scan(
         subcycleL3_Part2,
         L3Carry_Corrector(_L2carry.L3T0, _L2carry.L3S1, _L2carry.L3S2),
         jnp.arange(subcycle[1]),
@@ -699,4 +699,12 @@ def subcycleL2_Part2(
         final_L3carry.S1,
         final_L3carry.S2,
     )
-    return next_L2, next_L2
+    hist_L2 = L2Carry_Corrector(
+        L2T,
+        L2S1,
+        final_history_L3carry.T0,
+        L3Tp,
+        final_history_L3carry.S1,
+        final_history_L3carry.S2,
+    )
+    return next_L2, hist_L2
