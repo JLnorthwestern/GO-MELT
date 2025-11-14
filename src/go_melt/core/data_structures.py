@@ -35,8 +35,6 @@ class L2Carry_Corrector(NamedTuple):
     L3Tprime0: jnp.ndarray  # Level 3 Tprime
     L3S1: jnp.ndarray  # Level 3 phase state S1
     L3S2: jnp.ndarray
-    max_accum: jnp.ndarray
-    accum: jnp.ndarray
 
 
 class L3Carry_Predictor(NamedTuple):
@@ -48,8 +46,6 @@ class L3Carry_Corrector(NamedTuple):
     T0: jnp.ndarray  # Level 3 temperature
     S1: jnp.ndarray  # Level 3 phase state S1
     S2: jnp.ndarray  # Level 3 phase state S2
-    max_accum: jnp.ndarray  # Max accumulated melt time
-    accum: jnp.ndarray  # Current accumulated melt time
 
 
 class SubcycleContext_Predictor(NamedTuple):

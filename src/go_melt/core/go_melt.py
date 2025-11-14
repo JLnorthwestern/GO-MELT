@@ -35,6 +35,7 @@ from go_melt.io.save_results_functions import (
     saveState,
     saveResults,
     saveResultsFinal,
+    saveCustom,
     save_object,
 )
 
@@ -439,41 +440,26 @@ def go_melt(input_file: Path):
                 else 0
             )
 
-            # Always move mesh in subcycling
-            (Levels, Shapes, LInterp, move_hist) = moveEverything(
-                laser_all[0, :],
-                laser_start,
-                Levels,
-                move_hist,
-                LInterp,
-                L1L2Eratio,
-                L2L3Eratio,
-                Properties["layer_height"],
-            )
-
-            # Extract power values for each substep
-            _P = laser_all[:, 6]
-
-            # Run full GO-MELT subcycling
-            Levels, L2all, L3all, L3pall, _max_accum, _accum = subcycleGOMELT(
-                Levels,
-                ne_nn,
-                Shapes,
-                substrate,
-                LInterp,
-                tmp_ne_nn,
-                laser_all,
-                Properties,
-                _P,
-                subcycle,
-                max_accum_time[Levels[0]["idx"]],
-                accum_time[Levels[0]["idx"]],
+            (Levels, L2all, L3pall, move_hist, LInterp, max_accum_time, accum_time) = (
+                subcycleGOMELT(
+                    Levels,
+                    ne_nn,
+                    substrate,
+                    LInterp,
+                    tmp_ne_nn,
+                    laser_all,
+                    Properties,
+                    subcycle,
+                    max_accum_time,
+                    accum_time,
+                    laser_start,
+                    move_hist,
+                    L1L2Eratio,
+                    L2L3Eratio,
+                    record_accum,
+                )
             )
             gc.collect()
-
-            if record_accum:
-                max_accum_time = max_accum_time.at[Levels[0]["idx"]].set(_max_accum)
-                accum_time = accum_time.at[Levels[0]["idx"]].set(_accum)
 
             # Update counters and total elapsed time
             time_inc += t_add
@@ -500,7 +486,9 @@ def go_melt(input_file: Path):
         t_now = 1000 * (tend - t_loop)
         t_avg = 1000 * t_duration / time_inc
         execution_time_rem = (
-            ((tend - t_loop) / subcycle[2]) * (total_t_inc - time_inc) / 3600
+            ((tend - t_loop) / subcycle[2] * subcycle[-1])
+            * (total_t_inc - time_inc)
+            / 3600
         )
 
         print(
@@ -521,6 +509,15 @@ def go_melt(input_file: Path):
     # Save final Level 0 state and temperature fields
     saveState(Levels[0], "Level0_", Nonmesh["layer_num"], Nonmesh["save_path"], 0)
     saveResultsFinal(Levels, Nonmesh)
+    if record_accum == 1:
+        saveCustom(
+            Levels[0],
+            max_accum_time * 1e3,
+            "Time Above Melting (ms)",
+            Nonmesh["save_path"],
+            "max_accum_time",
+            0,
+        )
 
     jnp.savez(
         f"{Nonmesh['save_path']}FinalTemperatureFields",

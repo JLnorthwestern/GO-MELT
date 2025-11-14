@@ -8,6 +8,7 @@ from .phase_state_functions import updateStateProperties, computeStateProperties
 from .boundary_condition_functions import (
     computeConvRadBC,
 )
+from .move_mesh_functions import moveEverything
 from .solution_functions import (
     computeL1Temperature,
     computeL2Temperature,
@@ -154,20 +155,26 @@ def stepGOMELT(
     return Levels, max_accum_time, accum_time
 
 
-@partial(jax.jit, static_argnames=["ne_nn", "tmp_ne_nn", "substrate", "subcycle"])
+@partial(
+    jax.jit,
+    static_argnames=["ne_nn", "tmp_ne_nn", "substrate", "subcycle", "record_accum"],
+)
 def subcycleGOMELT(
     Levels: list[dict],
     ne_nn: tuple[int],
-    Shapes: list[list],
     substrate: tuple[int],
     LInterp: list[list],
     tmp_ne_nn: tuple[int],
-    laser_position: jnp.ndarray,
+    laser_position_all: jnp.ndarray,
     properties: dict,
-    laser_powers: jnp.ndarray,
-    subcycle: tuple[int, int, int, float, float, float],
-    max_accum_L3: jnp.ndarray,
-    accum_L3: jnp.ndarray,
+    subcycle: tuple[int, int, int, float, float, float, int],
+    max_accum_time: jnp.ndarray,
+    accum_time: jnp.ndarray,
+    laser_start,
+    move_hist,
+    L1L2Eratio,
+    L2L3Eratio,
+    record_accum,
 ) -> tuple[list[dict], jnp.ndarray, jnp.ndarray, jnp.ndarray, jnp.ndarray, jnp.ndarray]:
     """
     Perform a full predictor-corrector subcycling step for the GO-MELT model.
@@ -176,126 +183,168 @@ def subcycleGOMELT(
     using nested subcycling and subgrid scale corrections. It includes both the
     predictor and corrector phases, updating temperature fields and phase states.
     """
-    # Predictor Phase
-    L3rhocp_L1, L2rhocp_L1, L1k, L1rhocp, L1F, L1V, L1T = computeLevel1predictor(
-        Levels,
-        substrate,
-        properties,
-        Shapes,
-        ne_nn,
-        tmp_ne_nn,
-        laser_position,
-        laser_powers,
-    )
+    for _tool_path_loop in range(subcycle[-1]):
+        _tool_path_idx = _tool_path_loop * subcycle[2] + jnp.arange(subcycle[2])
+        laser_position = laser_position_all[_tool_path_idx, :]
+        (Levels, Shapes, LInterp, move_hist) = moveEverything(
+            laser_position[0, :],
+            laser_start,
+            Levels,
+            move_hist,
+            LInterp,
+            L1L2Eratio,
+            L2L3Eratio,
+            properties["layer_height"],
+        )
 
-    # --- Subcycle Level 2 ---
-    init_L2carry = L2Carry_Predictor(
-        Levels[2]["T0"],
-        Levels[2]["S1"],
-        Levels[3]["T0"],
-        Levels[3]["Tprime0"],
-        Levels[3]["S1"],
-    )
+        laser_powers = laser_position[:, 6]
+        if record_accum == 1:
+            IC3 = Levels[3]["T0"][None, :]
+        # Predictor Phase
+        L3rhocp_L1, L2rhocp_L1, L1k, L1rhocp, L1F, L1V, L1T = computeLevel1predictor(
+            Levels,
+            substrate,
+            properties,
+            Shapes,
+            ne_nn,
+            tmp_ne_nn,
+            laser_position,
+            laser_powers,
+        )
 
-    ctx = SubcycleContext_Predictor(
-        Levels,
-        ne_nn,
-        Shapes,
-        substrate,
-        LInterp,
-        laser_position,
-        laser_powers,
-        subcycle,
-        properties,
-        L1T,
-    )
-    result_L2carry, history_L2carry = jax.lax.scan(
-        lambda carry, sub: subcycleL2_Part1(carry, sub, ctx),
-        init_L2carry,
-        jnp.arange(subcycle[0]),
-    )
-    L2T = result_L2carry.T0
-    L3Tp = result_L2carry.L3Tprime0
-    L3Tp_L2 = history_L2carry.L3Tprime0
-    L2Tp, L1T = getNewTprime(Levels[2], L2T, L1T, Levels[1], LInterp[0])
+        # --- Subcycle Level 2 ---
+        init_L2carry = L2Carry_Predictor(
+            Levels[2]["T0"],
+            Levels[2]["S1"],
+            Levels[3]["T0"],
+            Levels[3]["Tprime0"],
+            Levels[3]["S1"],
+        )
 
-    # Corrector Phase
-    L1V = computeL1TprimeTerms_Part2(
-        Levels,
-        ne_nn,
-        L3Tp,
-        L2Tp,
-        L3rhocp_L1,
-        L2rhocp_L1,
-        laser_position[:, 5].sum(),
-        Shapes,
-        L1V,
-    )
-    L1T = computeL1Temperature(
-        Levels,
-        ne_nn,
-        tmp_ne_nn,
-        L1F,
-        L1V,
-        L1k,
-        L1rhocp,
-        laser_position[:, 5].sum(),
-        properties,
-    )
-    L1T = jnp.maximum(properties["T_amb"], L1T)  # TFSP
+        ctx = SubcycleContext_Predictor(
+            Levels,
+            ne_nn,
+            Shapes,
+            substrate,
+            LInterp,
+            laser_position,
+            laser_powers,
+            subcycle,
+            properties,
+            L1T,
+        )
+        result_L2carry, history_L2carry = jax.lax.scan(
+            lambda carry, sub: subcycleL2_Part1(carry, sub, ctx),
+            init_L2carry,
+            jnp.arange(subcycle[0]),
+        )
+        L2T = result_L2carry.T0
+        L3Tp = result_L2carry.L3Tprime0
+        L3Tp_L2 = history_L2carry.L3Tprime0
+        L2Tp, L1T = getNewTprime(Levels[2], L2T, L1T, Levels[1], LInterp[0])
 
-    init_L2carry = L2Carry_Corrector(
-        Levels[2]["T0"],
-        Levels[2]["S1"],
-        Levels[3]["T0"],
-        Levels[3]["Tprime0"],
-        Levels[3]["S1"],
-        Levels[3]["S2"],
-        max_accum_L3,
-        accum_L3,
-    )
+        # Corrector Phase
+        L1V = computeL1TprimeTerms_Part2(
+            Levels,
+            ne_nn,
+            L3Tp,
+            L2Tp,
+            L3rhocp_L1,
+            L2rhocp_L1,
+            laser_position[:, 5].sum(),
+            Shapes,
+            L1V,
+        )
+        L1T = computeL1Temperature(
+            Levels,
+            ne_nn,
+            tmp_ne_nn,
+            L1F,
+            L1V,
+            L1k,
+            L1rhocp,
+            laser_position[:, 5].sum(),
+            properties,
+        )
+        L1T = jnp.maximum(properties["T_amb"], L1T)  # TFSP
 
-    ctx = SubcycleContext_Corrector(
-        Levels,
-        ne_nn,
-        Shapes,
-        substrate,
-        LInterp,
-        laser_position,
-        laser_powers,
-        subcycle,
-        properties,
-        L1T,
-        L3Tp_L2,
-    )
-    final_L2carry, L2_hist = jax.lax.scan(
-        lambda carry, sub: subcycleL2_Part2(carry, sub, ctx),
-        init_L2carry,
-        jnp.arange(subcycle[0]),
-    )
+        init_L2carry = L2Carry_Corrector(
+            Levels[2]["T0"],
+            Levels[2]["S1"],
+            Levels[3]["T0"],
+            Levels[3]["Tprime0"],
+            Levels[3]["S1"],
+            Levels[3]["S2"],
+        )
 
-    # Final carry → update dictionaries
-    Levels[2]["T0"] = final_L2carry.T0
-    Levels[2]["S1"] = final_L2carry.S1
-    Levels[3]["T0"] = final_L2carry.L3T0
-    Levels[3]["Tprime0"] = final_L2carry.L3Tprime0
-    Levels[3]["S1"] = final_L2carry.L3S1
-    Levels[3]["S2"] = final_L2carry.L3S2
-    max_accum_L3 = final_L2carry.max_accum
-    accum_L3 = final_L2carry.accum
+        ctx = SubcycleContext_Corrector(
+            Levels,
+            ne_nn,
+            Shapes,
+            substrate,
+            LInterp,
+            laser_position,
+            laser_powers,
+            subcycle,
+            properties,
+            L1T,
+            L3Tp_L2,
+        )
+        final_L2carry, L2_hist = jax.lax.scan(
+            lambda carry, sub: subcycleL2_Part2(carry, sub, ctx),
+            init_L2carry,
+            jnp.arange(subcycle[0]),
+        )
 
-    L2all = L2_hist.T0  # full time series of Level 2 temperatures
-    L3all = L2_hist.L3T0  # full time series of Level 3 temperatures
-    L3pall = L2_hist.L3Tprime0  # full time series of Level 3 Tprime
+        # Final carry → update dictionaries
+        Levels[2]["T0"] = final_L2carry.T0
+        Levels[2]["S1"] = final_L2carry.S1
+        Levels[3]["T0"] = final_L2carry.L3T0
+        Levels[3]["Tprime0"] = final_L2carry.L3Tprime0
+        Levels[3]["S1"] = final_L2carry.L3S1
+        Levels[3]["S2"] = final_L2carry.L3S2
 
-    Levels[2]["Tprime0"], Levels[1]["T0"] = getNewTprime(
-        Levels[2], Levels[2]["T0"], L1T, Levels[1], LInterp[0]
-    )
-    Levels[0]["S1"] = Levels[0]["S1"].at[Levels[0]["idx"]].set(Levels[3]["S1"])
-    Levels[0]["S2"] = Levels[0]["S2"].at[:].set(False)
-    Levels[0]["S2"] = Levels[0]["S2"].at[Levels[0]["idx"]].set(Levels[3]["S2"])
+        L2all = L2_hist.T0  # full time series of Level 2 temperatures
+        L3all = L2_hist.L3T0  # full time series of Level 3 temperatures
+        L3pall = L2_hist.L3Tprime0  # full time series of Level 3 Tprime
 
-    return Levels, L2all, L3all, L3pall, max_accum_L3, accum_L3
+        Levels[2]["Tprime0"], Levels[1]["T0"] = getNewTprime(
+            Levels[2], Levels[2]["T0"], L1T, Levels[1], LInterp[0]
+        )
+        Levels[0]["S1"] = Levels[0]["S1"].at[Levels[0]["idx"]].set(Levels[3]["S1"])
+        Levels[0]["S2"] = Levels[0]["S2"].at[:].set(False)
+        Levels[0]["S2"] = Levels[0]["S2"].at[Levels[0]["idx"]].set(Levels[3]["S2"])
+
+        if record_accum == 1:
+            L3all = jnp.vstack([IC3, L3all.reshape([-1, L3all.shape[-1]])])
+
+            accum_L3 = accum_time[Levels[0]["idx"]]
+            max_accum_L3 = max_accum_time[Levels[0]["idx"]]
+
+            accum_L3 += (
+                jnp.minimum(
+                    jnp.maximum(
+                        jnp.maximum(L3all[:-1, :], L3all[1:, :])
+                        - properties["T_liquidus"],
+                        0,
+                    )
+                    / (jnp.abs(jnp.diff(L3all, axis=0)) + 1e-6),
+                    1,
+                )
+                * laser_position[:, 5, None]
+            ).sum(axis=0)
+
+            max_accum_L3 = jnp.maximum(max_accum_L3, accum_L3)
+
+            # Reset where L3T_all < T_liquidus
+            accum_L3 = jnp.where(
+                Levels[3]["T0"] < properties["T_liquidus"], 0, accum_L3
+            )
+
+            max_accum_time = max_accum_time.at[Levels[0]["idx"]].set(max_accum_L3)
+            accum_time = accum_time.at[Levels[0]["idx"]].set(accum_L3)
+
+    return Levels, L2all, L3pall, move_hist, LInterp, max_accum_time, accum_time
 
 
 def computeLevel1predictor(
@@ -362,7 +411,7 @@ def computeLevel1predictor(
 
 def compute_Level2_step(
     _L2sub: int,
-    subcycle: tuple[int, int, int, float, float, float],
+    subcycle: tuple[int, int, int, float, float, float, int],
     _L2carry: L2Carry_Predictor,
     properties: dict,
     substrate: tuple[int],
@@ -424,7 +473,7 @@ def compute_Level3_step(
     substrate: tuple[int],
     _L3sub: int,
     _L2sub: int,
-    subcycle: tuple[int, int, int, float, float, float],
+    subcycle: tuple[int, int, int, float, float, float, int],
     Levels: list[dict],
     laser_position: jnp.ndarray,
     ne_nn: tuple[int],
@@ -626,33 +675,15 @@ def subcycleL2_Part2(
             LInterp,
         )
 
-        # --- Accumulated Melt Time Update ---
-        # Reset accumulation if solid becomes liquid again
-        _resetmask = ((1 - 2 * _L3carry[2]) * L3S2) == 1
-        _resetaccumtime = _L3carry.accum * _resetmask
-
-        # Update max accumulated melt time
-        _max_check = jnp.maximum(_resetaccumtime, _L3carry[3])
-        max_accum_L3 = _max_check
-
-        # Update current accumulated melt time
-        accum_L3 = _L3carry.accum + laser_position[LLidx, 5] * L3S2 - _resetaccumtime
-
         return (
-            L3Carry_Corrector(L3T, L3S1, L3S2, max_accum_L3, accum_L3),
-            L3Carry_Corrector(L3T, L3S1, L3S2, max_accum_L3, accum_L3),
+            L3Carry_Corrector(L3T, L3S1, L3S2),
+            L3Carry_Corrector(L3T, L3S1, L3S2),
         )
 
     # Run Level 3 subcycling loop with structured init carry
     final_L3carry, _ = jax.lax.scan(
         subcycleL3_Part2,
-        L3Carry_Corrector(
-            _L2carry.L3T0,
-            _L2carry.L3S1,
-            _L2carry.L3S2,
-            _L2carry.max_accum,
-            _L2carry.accum,
-        ),
+        L3Carry_Corrector(_L2carry.L3T0, _L2carry.L3S1, _L2carry.L3S2),
         jnp.arange(subcycle[1]),
     )
 
@@ -667,7 +698,5 @@ def subcycleL2_Part2(
         L3Tp,
         final_L3carry.S1,
         final_L3carry.S2,
-        final_L3carry.max_accum,
-        final_L3carry.accum,
     )
     return next_L2, next_L2

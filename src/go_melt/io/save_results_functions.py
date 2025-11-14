@@ -146,6 +146,42 @@ def saveState(Level, save_str, record_lab, save_path, zoffset):
     gridToVTK(vtkSave, vtkcx, vtkcy, vtkcz, pointData=pointData)
 
 
+def saveCustom(Level, data, name, save_path, data_name, zoffset):
+    """
+    Save the current state field of a mesh level to a VTK file.
+
+    This function exports the structured grid data for visualization,
+    including only the material state field (e.g., powder or solid).
+
+    Parameters:
+    Level (dict): Dictionary containing mesh and field data:
+                  - "node_coords": [x, y, z] cooxrdinate arrays
+                  - "S1": state field (flattened)
+                  - "nodes": [nx, ny, nz] number of nodes in each direction
+    save_str (str): Prefix for the output filename.
+    record_lab (int): Frame or timestep label for file naming.
+    save_path (str): Directory path to save the output file.
+    zoffset (float): Offset applied to z-coordinates for rendering purposes.
+
+    Returns:
+    None
+    """
+    # List coordinates in each direction for structured save
+    vtkcx = np.array(Level["node_coords"][0])
+    vtkcy = np.array(Level["node_coords"][1])
+    vtkcz = np.array(Level["node_coords"][2] - zoffset)
+
+    # Reshape the state field for correct rendering
+    vtkdata = np.array(
+        data.reshape(Level["nodes"][2], Level["nodes"][1], Level["nodes"][0])
+    ).transpose((2, 1, 0))
+
+    # Save a VTK rectilinear grid file
+    pointData = {f"{name}": vtkdata}
+    vtkSave = f"{save_path}/{data_name}"
+    gridToVTK(vtkSave, vtkcx, vtkcy, vtkcz, pointData=pointData)
+
+
 def save_object(obj, filename):
     """
     Save a Python object to a file using the dill serialization library.
