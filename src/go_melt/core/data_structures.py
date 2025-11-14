@@ -50,3 +50,30 @@ class L3Carry_Corrector(NamedTuple):
     S2: jnp.ndarray  # Level 3 phase state S2
     max_accum: jnp.ndarray  # Max accumulated melt time
     accum: jnp.ndarray  # Current accumulated melt time
+
+
+class SubcycleContext_Predictor(NamedTuple):
+    Levels: list[dict]
+    ne_nn: tuple[int]
+    Shapes: list[list]
+    substrate: tuple[int]
+    LInterp: list[list]
+    laser_position: jnp.ndarray
+    laserP: jnp.ndarray
+    subcycle: tuple[int, int, int, float, float, float]
+    properties: dict
+    L1T: jnp.ndarray
+
+
+class SubcycleContext_Corrector(NamedTuple):
+    Levels: list[dict]
+    ne_nn: tuple[int]
+    Shapes: list[list]
+    substrate: tuple[int]
+    LInterp: list[list]
+    laser_position: jnp.ndarray
+    laserP: jnp.ndarray
+    subcycle: tuple[int, int, int, float, float, float]
+    properties: dict
+    L1T: jnp.ndarray
+    L3Tp_L2: jnp.ndarray
