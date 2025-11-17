@@ -39,7 +39,7 @@ from go_melt.io.save_results_functions import (
     save_object,
 )
 from .data_structures import SimulationState
-from .go_melt_helper_functions import single_step_execution
+from .go_melt_helper_functions import single_step_execution, clear_jax_function_caches
 
 
 def go_melt(input_file: Path):
@@ -361,16 +361,6 @@ def go_melt(input_file: Path):
             accum_time=simulation_state.accum_time,
         )
 
-    # Clear JAX caches
-    try:
-        stepGOMELT._clear_cache()
-        stepGOMELTDwellTime._clear_cache()
-        subcycleGOMELT._clear_cache()
-        moveEverything._clear_cache()
-        gc.collect()
-        print("Cleared cache")
-    except:
-        gc.collect()
-        print("Cleared some cache")
+    clear_jax_function_caches()
 
     print("End of simulation")

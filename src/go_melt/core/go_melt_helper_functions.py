@@ -44,16 +44,7 @@ def single_step_execution(
             and not state.checkpoint_load
         ):
             new_checkpoint = True
-            try:
-                stepGOMELT._clear_cache()
-                stepGOMELTDwellTime._clear_cache()
-                subcycleGOMELT._clear_cache()
-                moveEverything._clear_cache()
-                gc.collect()
-                print("Cleared cache")
-            except:
-                gc.collect()
-                print("Cleared some cache")
+            clear_jax_function_caches()
 
         # -----------------------------------
         # Handle Layer Change
