@@ -1,5 +1,8 @@
 from typing import NamedTuple
 import jax.numpy as jnp
+from dataclasses import dataclass
+from pathlib import Path
+import numpy as np
 
 
 class obj:
@@ -73,3 +76,37 @@ class SubcycleContext_Corrector(NamedTuple):
     properties: dict
     L1T: jnp.ndarray
     L3Tp_L2: jnp.ndarray
+
+
+@dataclass
+class SimulationState:
+    # Core dictionaries
+    Levels: dict
+    Nonmesh: dict
+    Properties: dict
+
+    # Static numbers (tuples)
+    ne_nn: tuple
+    substrate: tuple
+    tmp_ne_nn: tuple
+
+    # Unchanging variables
+    laser_start: np.ndarray
+    L1L2Eratio: list[int]
+    L2L3Eratio: list[int]
+    total_t_inc: int
+
+    # Changing variables
+    laser_prev_z: float
+    time_inc: int
+    checkpoint_load: bool
+    move_hist: list[jnp.ndarray]
+    dwell_time_count: float
+    accum_time: jnp.ndarray
+    max_accum_time: jnp.ndarray
+    record_inc: int
+    wait_inc: int
+    LInterp: list
+
+    # Paths
+    checkpoint_path: Path
