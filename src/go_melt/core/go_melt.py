@@ -19,10 +19,8 @@ from .setup_dictionary_functions import (
     SetupProperties,
     SetupStaticNodesAndElements,
     SetupStaticSubcycle,
-    calcStaticTmpNodesAndElements,
 )
 from go_melt.utils.interpolation_functions import (
-    interpolatePoints,
     interpolatePointsMatrix,
 )
 from go_melt.io.toolpath_functions import count_lines, parsingGcode
@@ -32,13 +30,13 @@ from go_melt.io.save_results_functions import (
     saveResults,
     saveResultsFinal,
     saveCustom,
-    save_object,
 )
 from .data_structures import SimulationState
 from .go_melt_helper_functions import (
     time_loop_pre_execution,
     single_step_execution,
     multi_step_execution,
+    time_loop_post_execution,
     clear_jax_function_caches,
 )
 
@@ -202,55 +200,9 @@ def go_melt(input_file: Path):
         else:  # Subcycling mode
             simulation_state = multi_step_execution(laser_all, simulation_state)
 
-        # -----------------------------------
-        # Output and Monitoring
-        # -----------------------------------
-        t_output += laser_all[:, 5].sum()
-
-        # Save results if record step reached
-        if simulation_state.record_inc >= simulation_state.Nonmesh["record_step"]:
-            simulation_state.record_inc = 0
-            savenum = (
-                int(simulation_state.time_inc / simulation_state.Nonmesh["record_step"])
-                + 1
-            )
-            saveResults(simulation_state.Levels, simulation_state.Nonmesh, savenum)
-
-        # Print temperature info if enabled
-        if simulation_state.Nonmesh["info_T"]:
-            printLevelMaxMin(simulation_state.Levels, level_names)
-
-        # Timing diagnostics
-        tend = time.time()
-        t_duration = tend - tstart
-        t_now = 1000 * (tend - t_loop)
-        t_avg = 1000 * t_duration / simulation_state.time_inc
-        execution_time_rem = (
-            (
-                (tend - t_loop)
-                / simulation_state.subcycle[2]
-                * simulation_state.subcycle[-1]
-            )
-            * (simulation_state.total_t_inc - simulation_state.time_inc)
-            / 3600
+        simulation_state, t_output = time_loop_post_execution(
+            simulation_state, laser_all, level_names, t_output, tstart, t_loop
         )
-
-        print(
-            "%d/%d, Real: %.6f s, Wall: %.2f s, Loop: %5.2f ms, Avg: %5.2f ms/dt"
-            % (
-                simulation_state.time_inc,
-                simulation_state.total_t_inc,
-                t_output,
-                t_duration,
-                t_now,
-                t_avg,
-            )
-        )
-        print(
-            "Laser location: X: %.2f, Y: %.2f, Z: %.2f"
-            % (laser_all[-1, 0], laser_all[-1, 1], laser_all[-1, 2])
-        )
-        print(f"Estimated execution time remaining: {execution_time_rem:.4f} hours")
 
     # -----------------------------------
     # Finalization
