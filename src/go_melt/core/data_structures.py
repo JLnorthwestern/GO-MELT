@@ -82,7 +82,7 @@ class SubcycleContext_Corrector(NamedTuple):
 @dataclass
 class SimulationState:
     # Core dictionaries
-    Levels: dict
+    Levels: list[dict]
     Nonmesh: dict
     Properties: dict
 
