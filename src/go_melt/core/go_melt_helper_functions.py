@@ -537,7 +537,7 @@ def pre_time_loop_initialization(input_file: Path) -> SimulationState:
     # -------------------------------
     # Assemble Simulation State
     # -------------------------------
-    simulation_state = SimulationState(
+    state = SimulationState(
         Levels=Levels,
         Nonmesh=Nonmesh,
         Properties=Properties,
@@ -569,4 +569,57 @@ def pre_time_loop_initialization(input_file: Path) -> SimulationState:
         ongoing_simulation=True,
     )
 
-    return simulation_state
+    return state
+
+
+def post_time_loop_finalization(state: SimulationState) -> None:
+    """
+    Perform all finalization tasks after the simulation time loop.
+
+    This helper closes open files, saves final states and results, records
+    custom metrics (e.g., Time Above Melting), stores temperature fields,
+    and clears JAX caches.
+    """
+    # -----------------------------------
+    # Finalization
+    # -----------------------------------
+    state.tool_path_file.close()
+
+    # Save final Level 0 state and temperature fields
+    saveState(
+        state.Levels[0],
+        "Level0_",
+        state.Nonmesh["layer_num"],
+        state.Nonmesh["save_path"],
+        0,
+    )
+
+    saveResultsFinal(state.Levels, state.Nonmesh)
+
+    if state.Nonmesh.get("record_TAM", 0) == 1:
+        saveCustom(
+            state.Levels[0],
+            state.max_accum_time * 1e3,
+            "Time Above Melting (ms)",
+            state.Nonmesh["save_path"],
+            "max_accum_time",
+            0,
+        )
+
+    jnp.savez(
+        f"{state.Nonmesh['save_path']}FinalTemperatureFields",
+        L1T=state.Levels[1]["T0"],
+        L2T=state.Levels[2]["T0"],
+        L3T=state.Levels[3]["T0"],
+    )
+
+    if state.Nonmesh.get("record_TAM", 0):
+        state.accum_time = jnp.maximum(state.accum_time, state.max_accum_time)
+        jnp.savez(
+            state.Nonmesh["save_path"]
+            + "accum_time"
+            + str(state.Nonmesh["layer_num"]).zfill(4),
+            accum_time=state.accum_time,
+        )
+
+    clear_jax_function_caches()
