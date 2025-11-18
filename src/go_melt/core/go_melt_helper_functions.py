@@ -255,6 +255,96 @@ def single_step_execution(
     return state
 
 
+def multi_step_execution(
+    laser_all: jnp.ndarray, state: SimulationState
+) -> SimulationState:
+    # Update wait time if laser is off
+    state.wait_inc = (
+        state.wait_inc + len(laser_all) - laser_all[:, 4].sum()
+        if (laser_all[:, 4] == 0).any()
+        else 0
+    )
+
+    (
+        state.Levels,
+        L2all,
+        L3pall,
+        state.move_hist,
+        state.LInterp,
+        state.max_accum_time,
+        state.accum_time,
+    ) = subcycleGOMELT(
+        state.Levels,
+        state.ne_nn,
+        state.substrate,
+        state.LInterp,
+        state.tmp_ne_nn,
+        laser_all,
+        state.Properties,
+        state.subcycle,
+        state.max_accum_time,
+        state.accum_time,
+        state.laser_start,
+        state.move_hist,
+        state.L1L2Eratio,
+        state.L2L3Eratio,
+        state.Nonmesh["record_TAM"],
+    )
+    gc.collect()
+
+    # Update counters and total elapsed time
+    state.time_inc += state.t_add
+    state.record_inc += state.t_add
+    return state
+
+
+def time_loop_pre_execution(
+    tool_path_file: Path, state: SimulationState
+) -> tuple[SimulationState, jnp.ndarray, bool, bool]:
+    """Read laser path for one full subcycle and determine execution mode."""
+
+    num_lines_expected = state.subcycle[0] * state.subcycle[1] * state.subcycle[-1]
+    raw_lines = [tool_path_file.readline().strip() for _ in range(num_lines_expected)]
+
+    ongoing_simulation = True
+
+    if "" not in raw_lines:
+        state.t_add = state.subcycle[2] * state.subcycle[-1]
+        laser_all = jnp.array([parse_line(line) for line in raw_lines])
+    else:
+        state.t_add = raw_lines.index("")
+        laser_all = jnp.array([parse_line(raw_lines[i]) for i in range(state.t_add)])
+        ongoing_simulation = False
+        if state.t_add == 0:
+            return state, jnp.array([[]]), False, ongoing_simulation
+
+    # --- Single-step condition checks ---
+    z_mismatch = any(laser_all[:, 2] != state.laser_prev_z)
+    wait_exceeded = state.wait_inc > max(
+        0, state.Nonmesh["wait_time"] - num_lines_expected * 2
+    )
+    velocity_jump = (
+        jnp.abs(jnp.diff(laser_all, axis=0)[:, :2] / laser_all[:-1, 5].max())
+        > (100 * state.Nonmesh["laser_velocity"])
+    ).any()
+
+    single_step = (
+        z_mismatch
+        or state.checkpoint_load
+        or wait_exceeded
+        or not ongoing_simulation
+        or laser_all.shape[0] == 1
+        or velocity_jump
+    )
+
+    return state, laser_all, single_step, ongoing_simulation
+
+
+def parse_line(line: str) -> list[float]:
+    """Convert a comma-separated line into a list of floats."""
+    return [float(val) for val in line.split(",") if val]
+
+
 def clear_jax_function_caches():
     """Clear JAX compilation caches using _clear_cache only."""
     funcs = [

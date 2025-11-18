@@ -21,10 +21,6 @@ from .setup_dictionary_functions import (
     SetupStaticSubcycle,
     calcStaticTmpNodesAndElements,
 )
-from .mesh_functions import getSubstrateNodes
-from .move_mesh_functions import moveEverything
-from .predictor_corrector_functions import stepGOMELT, subcycleGOMELT
-from .solution_functions import stepGOMELTDwellTime
 from go_melt.utils.interpolation_functions import (
     interpolatePoints,
     interpolatePointsMatrix,
@@ -39,7 +35,12 @@ from go_melt.io.save_results_functions import (
     save_object,
 )
 from .data_structures import SimulationState
-from .go_melt_helper_functions import single_step_execution, clear_jax_function_caches
+from .go_melt_helper_functions import (
+    time_loop_pre_execution,
+    single_step_execution,
+    multi_step_execution,
+    clear_jax_function_caches,
+)
 
 
 def go_melt(input_file: Path):
@@ -173,6 +174,8 @@ def go_melt(input_file: Path):
         record_inc=record_inc,
         wait_inc=wait_inc,
         LInterp=LInterp,
+        t_add=0,
+        subcycle=subcycle,
     )
 
     # -------------------------------
@@ -181,49 +184,11 @@ def go_melt(input_file: Path):
     while ongoing_simulation:
         t_loop = time.time()  # Start timer for this loop
 
-        # -----------------------------------
-        # Read laser path for one full subcycle (n2 × n3 lines)
-        # -----------------------------------
-        _pos = [
-            tool_path_file.readline().split(",")
-            for _2 in range(subcycle[0] * subcycle[1] * subcycle[-1])
-        ]
-
-        # Convert laser path to array if valid, else handle end-of-file
-        if [""] not in _pos:
-            t_add = subcycle[2] * subcycle[-1]
-            laser_all = jnp.array([[float(val) for val in line] for line in _pos])
-        else:
-            # Set up for partial single time-stepping and end simulation afterwards
-            t_add = _pos.index([""])
-            laser_all = jnp.array(
-                [[float(val) for val in _pos[i]] for i in range(t_add)]
-            )
-            ongoing_simulation = False
-            if t_add == 0:
-                break
-
-        # -----------------------------------
-        # Determine if single-step is needed
-        # -----------------------------------
-        single_step = (
-            any(laser_all[:, 2] != simulation_state.laser_prev_z)
-            or simulation_state.checkpoint_load
-            or (
-                simulation_state.wait_inc
-                > max(
-                    0,
-                    simulation_state.Nonmesh["wait_time"]
-                    - subcycle[0] * subcycle[1] * subcycle[-1] * 2,
-                )
-            )
-            or not ongoing_simulation
-            or laser_all.shape[0] == 1
-            or (
-                jnp.abs(jnp.diff(laser_all, axis=0)[:, :2] / laser_all[:-1, 5].max())
-                > (100 * simulation_state.Nonmesh["laser_velocity"])
-            ).any()
+        simulation_state, laser_all, single_step, ongoing_simulation = (
+            time_loop_pre_execution(tool_path_file, simulation_state)
         )
+        if simulation_state.t_add == 0:
+            break
 
         # -----------------------------------
         # Single-Step Execution (Equal time step for each Level)
@@ -235,43 +200,7 @@ def go_melt(input_file: Path):
                 return
 
         else:  # Subcycling mode
-            # Update wait time if laser is off
-            simulation_state.wait_inc = (
-                simulation_state.wait_inc + len(laser_all) - laser_all[:, 4].sum()
-                if (laser_all[:, 4] == 0).any()
-                else 0
-            )
-
-            (
-                simulation_state.Levels,
-                L2all,
-                L3pall,
-                simulation_state.move_hist,
-                simulation_state.LInterp,
-                simulation_state.max_accum_time,
-                simulation_state.accum_time,
-            ) = subcycleGOMELT(
-                simulation_state.Levels,
-                simulation_state.ne_nn,
-                simulation_state.substrate,
-                simulation_state.LInterp,
-                simulation_state.tmp_ne_nn,
-                laser_all,
-                simulation_state.Properties,
-                subcycle,
-                simulation_state.max_accum_time,
-                simulation_state.accum_time,
-                simulation_state.laser_start,
-                simulation_state.move_hist,
-                simulation_state.L1L2Eratio,
-                simulation_state.L2L3Eratio,
-                Nonmesh["record_TAM"],
-            )
-            gc.collect()
-
-            # Update counters and total elapsed time
-            simulation_state.time_inc += t_add
-            simulation_state.record_inc += t_add
+            simulation_state = multi_step_execution(laser_all, simulation_state)
 
         # -----------------------------------
         # Output and Monitoring
@@ -297,7 +226,11 @@ def go_melt(input_file: Path):
         t_now = 1000 * (tend - t_loop)
         t_avg = 1000 * t_duration / simulation_state.time_inc
         execution_time_rem = (
-            ((tend - t_loop) / subcycle[2] * subcycle[-1])
+            (
+                (tend - t_loop)
+                / simulation_state.subcycle[2]
+                * simulation_state.subcycle[-1]
+            )
             * (simulation_state.total_t_inc - simulation_state.time_inc)
             / 3600
         )

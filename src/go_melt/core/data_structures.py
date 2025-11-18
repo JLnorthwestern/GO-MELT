@@ -89,6 +89,7 @@ class SimulationState:
     ne_nn: tuple
     substrate: tuple
     tmp_ne_nn: tuple
+    subcycle: tuple
 
     # Unchanging variables
     laser_start: np.ndarray
@@ -107,6 +108,7 @@ class SimulationState:
     record_inc: int
     wait_inc: int
     LInterp: list
+    t_add: int
 
     # Paths
     checkpoint_path: Path
