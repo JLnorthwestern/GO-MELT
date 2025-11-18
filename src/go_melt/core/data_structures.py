@@ -3,6 +3,7 @@ import jax.numpy as jnp
 from dataclasses import dataclass
 from pathlib import Path
 import numpy as np
+import io
 
 
 class obj:
@@ -96,6 +97,9 @@ class SimulationState:
     L1L2Eratio: list[int]
     L2L3Eratio: list[int]
     total_t_inc: int
+    tool_path_file: io.TextIOWrapper
+    layer_check: int
+    level_names: list[str]
 
     # Changing variables
     laser_prev_z: float
@@ -109,6 +113,9 @@ class SimulationState:
     wait_inc: int
     LInterp: list
     t_add: int
+    tstart: float
+    t_output: float
+    ongoing_simulation: bool
 
     # Paths
     checkpoint_path: Path

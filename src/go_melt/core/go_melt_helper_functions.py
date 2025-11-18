@@ -5,6 +5,10 @@ import gc
 import jax.numpy as jnp
 import copy
 import os
+import json
+import dill
+import time
+import numpy as np
 from .data_structures import SimulationState
 from go_melt.utils.interpolation_functions import (
     interpolatePoints,
@@ -28,6 +32,7 @@ from .setup_dictionary_functions import (
 )
 from .mesh_functions import getSubstrateNodes
 from go_melt.io.print_functions import printLevelMaxMin
+from go_melt.io.toolpath_functions import count_lines, parsingGcode
 
 
 def single_step_execution(
@@ -299,14 +304,14 @@ def multi_step_execution(
 
 
 def time_loop_pre_execution(
-    tool_path_file: Path, state: SimulationState
-) -> tuple[SimulationState, jnp.ndarray, bool, bool]:
+    state: SimulationState,
+) -> tuple[SimulationState, jnp.ndarray, bool]:
     """Read laser path for one full subcycle and determine execution mode."""
 
     num_lines_expected = state.subcycle[0] * state.subcycle[1] * state.subcycle[-1]
-    raw_lines = [tool_path_file.readline().strip() for _ in range(num_lines_expected)]
-
-    ongoing_simulation = True
+    raw_lines = [
+        state.tool_path_file.readline().strip() for _ in range(num_lines_expected)
+    ]
 
     if "" not in raw_lines:
         state.t_add = state.subcycle[2] * state.subcycle[-1]
@@ -314,9 +319,9 @@ def time_loop_pre_execution(
     else:
         state.t_add = raw_lines.index("")
         laser_all = jnp.array([parse_line(raw_lines[i]) for i in range(state.t_add)])
-        ongoing_simulation = False
+        state.ongoing_simulation = False
         if state.t_add == 0:
-            return state, jnp.array([[]]), False, ongoing_simulation
+            return state, jnp.array([[]]), False
 
     # --- Single-step condition checks ---
     z_mismatch = any(laser_all[:, 2] != state.laser_prev_z)
@@ -332,12 +337,12 @@ def time_loop_pre_execution(
         z_mismatch
         or state.checkpoint_load
         or wait_exceeded
-        or not ongoing_simulation
+        or not state.ongoing_simulation
         or laser_all.shape[0] == 1
         or velocity_jump
     )
 
-    return state, laser_all, single_step, ongoing_simulation
+    return state, laser_all, single_step
 
 
 def parse_line(line: str) -> list[float]:
@@ -367,33 +372,19 @@ def clear_jax_function_caches():
         print("No caches cleared, ran garbage collection")
 
 
-import time
-
-
 def time_loop_post_execution(
     state: SimulationState,
     laser_all: jnp.ndarray,
-    level_names: list,
-    t_output: float,
-    tstart: float,
     t_loop: float,
 ) -> float:
     """
     Helper function to handle output, monitoring, and diagnostics during simulation.
-
-    Parameters
-    ----------
-
-    Returns
-    -------
-    float
-        Updated t_output value.
     """
 
     # -----------------------------------
     # Output accumulation
     # -----------------------------------
-    t_output += laser_all[:, 5].sum()
+    state.t_output += laser_all[:, 5].sum()
 
     # Save results if record step reached
     if state.record_inc >= state.Nonmesh["record_step"]:
@@ -403,11 +394,11 @@ def time_loop_post_execution(
 
     # Print temperature info if enabled
     if state.Nonmesh.get("info_T", False):
-        printLevelMaxMin(state.Levels, level_names)
+        printLevelMaxMin(state.Levels, state.level_names)
 
     # Timing diagnostics
     tend = time.time()
-    t_duration = tend - tstart
+    t_duration = tend - state.tstart
     t_now = 1000 * (tend - t_loop)
     t_avg = 1000 * t_duration / max(state.time_inc, 1)
     execution_time_rem = (
@@ -422,7 +413,7 @@ def time_loop_post_execution(
         % (
             state.time_inc,
             state.total_t_inc,
-            t_output,
+            state.t_output,
             t_duration,
             t_now,
             t_avg,
@@ -434,4 +425,148 @@ def time_loop_post_execution(
     )
     print(f"Estimated execution time remaining: {execution_time_rem:.4f} hours")
 
-    return state, t_output
+    return state
+
+
+def pre_time_loop_initialization(input_file: Path) -> SimulationState:
+    """
+    This function initializes the simulation, sets up all levels, properties, and
+    toolpath data, and prepares for time stepping.
+    """
+
+    # -------------------------------
+    # Load solver input
+    # -------------------------------
+    with open(input_file, "r") as read_file:
+        solver_input = json.load(read_file)
+
+    tstart = time.time()  # Start timer
+
+    # -------------------------------
+    # Setup: Properties, Mesh, Nonmesh
+    # -------------------------------
+    Properties = SetupProperties(solver_input.get("properties", {}))
+    Levels = SetupLevels(solver_input, Properties)
+    Nonmesh = SetupNonmesh(solver_input.get("nonmesh", {}))
+
+    if Nonmesh["haste"]:
+        level_names = ["L1", "L2", "L3", "HASTE"]
+    else:
+        level_names = ["L1", "L2", "L3"]
+
+    # -------------------------------
+    # Static Mesh Metadata
+    # -------------------------------
+    ne_nn = SetupStaticNodesAndElements(Levels)
+    subcycle = SetupStaticSubcycle(Nonmesh)
+
+    # -------------------------------
+    # Mesh Ratios for Movement Logic
+    # -------------------------------
+    L1L2Eratio = [
+        int(jnp.round(Levels[1]["h"][i] / Levels[2]["h"][i])) for i in range(2)
+    ] + [int(jnp.round(Properties["layer_height"] / Levels[2]["h"][2]))]
+
+    L2L3Eratio = [
+        int(jnp.round(Levels[2]["h"][i] / Levels[3]["h"][i])) for i in range(3)
+    ]
+
+    # -------------------------------
+    # Toolpath Parsing
+    # -------------------------------
+    if Nonmesh["use_txt"]:
+        move_mesh = count_lines(Nonmesh["toolpath"])
+    else:
+        move_mesh = parsingGcode(Nonmesh, Properties, Levels[2]["h"])
+
+    # -------------------------------
+    # Initial Laser Position
+    # -------------------------------
+    if not Nonmesh["laser_center"]:
+        with open(Nonmesh["toolpath"], "r") as tool_path_file:
+            laser_start = np.array(
+                [float(val) for val in tool_path_file.readline().split(",")]
+            )
+    else:
+        laser_start = np.array(Nonmesh["laser_center"])
+
+    # -------------------------------
+    # Interpolation Matrices
+    # -------------------------------
+    L1L2Interp = interpolatePointsMatrix(Levels[1], Levels[2]["node_coords"])
+    L2L3Interp = interpolatePointsMatrix(Levels[2], Levels[3]["node_coords"])
+    LInterp = [L1L2Interp, L2L3Interp]
+
+    # -------------------------------
+    # Time & Output Initialization
+    # -------------------------------
+    time_inc = record_inc = wait_inc = 0
+    t_output = 0.0
+    savenum = int(time_inc / Nonmesh["record_step"]) + 1
+    saveResults(Levels, Nonmesh, savenum)
+
+    accum_time = jnp.zeros(Levels[0]["nn"])
+    max_accum_time = jnp.zeros(Levels[0]["nn"])
+
+    # -------------------------------
+    # Toolpath File & Checkpointing
+    # -------------------------------
+    tool_path_file = open(Nonmesh["toolpath"], "r")
+    checkpoint_path = Path(Nonmesh["save_path"] + "checkpoint").absolute()
+    layer_check = Nonmesh["layer_num"] + Nonmesh["restart_layer_num"]
+
+    # -------------------------------
+    # Load Checkpoint if Requested
+    # -------------------------------
+    if Nonmesh["layer_num"] > 0:
+        print(f"Checkpoint loading for start of Layer {Nonmesh['layer_num']}")
+        FILENAME = f"Checkpoint{str(Nonmesh['layer_num']).zfill(4)}.pkl"
+
+        with open(checkpoint_path.joinpath(FILENAME), "rb") as f:
+            Levels, accum_time, max_accum_time, time_inc_loaded, record_inc = dill.load(
+                f
+            )
+
+        checkpoint_load = True
+        line_len = len(tool_path_file.readline())
+        tool_path_file.seek(time_inc_loaded * line_len)
+        time_inc += time_inc_loaded
+    else:
+        checkpoint_load = False
+
+    # -------------------------------
+    # Assemble Simulation State
+    # -------------------------------
+    simulation_state = SimulationState(
+        Levels=Levels,
+        Nonmesh=Nonmesh,
+        Properties=Properties,
+        checkpoint_path=checkpoint_path,
+        ne_nn=ne_nn,
+        laser_start=laser_start,
+        L1L2Eratio=L1L2Eratio,
+        L2L3Eratio=L2L3Eratio,
+        substrate=len(Levels) * (0,),
+        tmp_ne_nn=(0, 0),
+        total_t_inc=move_mesh,
+        laser_prev_z=float("inf"),
+        time_inc=time_inc,
+        checkpoint_load=checkpoint_load,
+        move_hist=[jnp.array(0), jnp.array(0), jnp.array(0)],
+        dwell_time_count=0.0,
+        accum_time=accum_time,
+        max_accum_time=max_accum_time,
+        record_inc=record_inc,
+        wait_inc=wait_inc,
+        LInterp=LInterp,
+        t_add=0,
+        subcycle=subcycle,
+        tool_path_file=tool_path_file,
+        tstart=tstart,
+        t_output=t_output,
+        layer_check=layer_check,
+        level_names=level_names,
+        ongoing_simulation=True,
+    )
+
+    return simulation_state
