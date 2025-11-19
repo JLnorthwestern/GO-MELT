@@ -5,6 +5,7 @@ import pytest
 from pathlib import Path
 import dill
 import sys
+import json
 
 from go_melt.core.data_structures import SimulationState
 from go_melt.core.go_melt_helper_functions import (
@@ -159,6 +160,98 @@ def test_pre_time_loop_initialization_types_and_values():
     assert state.total_t_inc == 1480
 
 
+class FakeToolPathFile(io.StringIO):
+    def __init__(self, line="1.0,2.0,3.0\n"):
+        # repeat the line many times so readline always has something
+        super().__init__(line * 10)
+        self._line = line
+
+    def readline(self, *args, **kwargs):
+        # always return the same line, regardless of position
+        return self._line
+
+
+def test_pre_time_loop_initialization_conditionals(monkeypatch):
+    # --- Fake solver_input JSON ---
+    solver_input = {
+        "properties": {"layer_height": 1.0},
+        "nonmesh": {
+            "haste": 1,
+            "use_txt": 1,
+            "laser_center": [],  # empty list triggers branch
+            "layer_num": 1,  # triggers checkpoint branch
+            "restart_layer_num": 0,
+            "toolpath": "fake_toolpath.txt",
+            "save_path": "fake_save/",
+            "record_step": 1,
+        },
+    }
+
+    # Prepare fake file handles
+    fake_json = io.StringIO(json.dumps(solver_input))
+    fake_checkpoint = io.BytesIO()
+    dill.dump((["levels"], "accum", "max_accum", 5, 10), fake_checkpoint)
+    fake_checkpoint.seek(0)
+
+    def fake_open(path, mode="r", *args, **kwargs):
+        if "input.json" in str(path):
+            return fake_json
+        elif "toolpath" in str(path):
+            return FakeToolPathFile()
+        elif "Checkpoint" in str(path):
+            return fake_checkpoint
+        else:
+            return io.StringIO("")
+
+    monkeypatch.setattr("builtins.open", fake_open)
+
+    # --- Monkeypatch heavy functions at helper level ---
+    monkeypatch.setattr(
+        helper_functions, "SetupProperties", lambda props: {"layer_height": 1.0}
+    )
+    monkeypatch.setattr(
+        helper_functions,
+        "SetupLevels",
+        lambda solver_input, props: [
+            {"nn": 1},
+            {
+                "h": [1, 1, 1],
+                "node_coords": [jnp.arange(2), jnp.arange(2), jnp.arange(2)],
+            },
+            {
+                "h": [1, 1, 1],
+                "node_coords": [jnp.arange(2), jnp.arange(2), jnp.arange(2)],
+            },
+            {
+                "h": [1, 1, 1],
+                "node_coords": [jnp.arange(2), jnp.arange(2), jnp.arange(2)],
+            },
+        ],
+    )
+    monkeypatch.setattr(helper_functions, "SetupNonmesh", lambda nm: nm)
+    monkeypatch.setattr(
+        helper_functions, "SetupStaticNodesAndElements", lambda levels: (0, 0)
+    )
+    monkeypatch.setattr(helper_functions, "SetupStaticSubcycle", lambda nm: (1, 1, 1))
+    monkeypatch.setattr(helper_functions, "count_lines", lambda path: 42)
+    monkeypatch.setattr(
+        helper_functions, "interpolatePointsMatrix", lambda a, b: np.array([[1]])
+    )
+    monkeypatch.setattr(
+        helper_functions, "saveResults", lambda levels, nonmesh, savenum: None
+    )
+
+    # --- Act ---
+    state = helper_functions.pre_time_loop_initialization("input.json")
+
+    # --- Assert: check the conditional branches were exercised ---
+    assert "HASTE" in state.level_names
+    assert state.total_t_inc == 42
+    assert np.allclose(state.laser_start, [1.0, 2.0, 3.0])
+    assert state.checkpoint_load is True
+    assert state.time_inc >= 5
+
+
 def test_time_loop_pre_execution():
     # Arrange: load input state
     with open(Path("tests/core/inputs/inputs_time_loop_pre_execution.pkl"), "rb") as f:
@@ -296,12 +389,47 @@ def test_time_loop_post_execution():
     _assert_simulation_state_equal(simulation_state_result, simulation_state_output)
 
 
+def test_time_loop_post_execution_edge(monkeypatch):
+    # Arrange: load input state from pickle
+    with open(Path("tests/core/inputs/inputs_time_loop_post_execution.pkl"), "rb") as f:
+        simulation_state, laser_all, t_loop = dill.load(f)
+
+    # Patch saveResults so it doesn't execute
+    called = {}
+    monkeypatch.setattr(
+        helper_functions,
+        "saveResults",
+        lambda levels, nonmesh, savenum: called.update(
+            {"levels": levels, "nonmesh": nonmesh, "savenum": savenum}
+        ),
+    )
+
+    # Force record_inc >= record_step so branch is taken
+    simulation_state.record_inc = simulation_state.Nonmesh["record_step"]
+
+    # Act
+    simulation_state_result = time_loop_post_execution(
+        simulation_state, laser_all, t_loop
+    )
+
+    # Assert: branch executed, saveResults was "called"
+    assert "savenum" in called
+    assert (
+        called["savenum"]
+        == int(simulation_state.time_inc / simulation_state.Nonmesh["record_step"]) + 1
+    )
+    assert simulation_state_result.record_inc == 0
+
+
 def test_post_time_loop_finalization_runs(monkeypatch):
     # Arrange: load input state
     with open(
         Path("tests/core/inputs/inputs_post_time_loop_finalization.pkl"), "rb"
     ) as f:
         simulation_state = dill.load(f)
+
+    # Force the branch: record_TAM == 1
+    simulation_state.Nonmesh["record_TAM"] = 1
 
     # Patch side-effecting functions
     monkeypatch.setattr(

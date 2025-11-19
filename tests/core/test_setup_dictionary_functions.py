@@ -39,10 +39,15 @@ def test_SetupProperties_SetupLevels_SetupNonmesh(monkeypatch):
     assert called["path"] == Nonmesh["save_path"]
 
 
-def test_SetupProperties_SetupLevels_SetupNonmesh_Multilayer():
-    input_file = "examples/example_multilayer_unit.json"
+def test_SetupProperties_SetupLevels_SetupNonmesh_edge():
+    input_file = "examples/example_unit.json"
     with open(input_file, "r") as read_file:
         solver_input = json.load(read_file)
+
+    # --- Modify solver_input in memory ---
+    solver_input["Level2"]["bounds"]["z"] = [-2.5, 0.5]
+    solver_input["Level3"]["bounds"]["z"] = [-1.0, 0.5]
+
     Properties = SetupProperties(solver_input.get("properties", {}))
     assert isinstance(Properties, dict)
     Levels = SetupLevels(solver_input, Properties)
