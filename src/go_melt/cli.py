@@ -78,12 +78,7 @@ def run_package(config_path: str | None):
     except Exception as exc:
         logger.exception("Could not import package run entrypoint: %s", exc)
         raise SystemExit(1)
-    # call the package run function; prefer signature run(config_path)
-    if config_path is None:
-        logger.info("No config path provided; calling run() without args")
-        return package_run()
-    else:
-        return package_run(config_path)
+    return package_run(config_path)
 
 
 def main(argv=None):
@@ -95,11 +90,6 @@ def main(argv=None):
         print("dry-run:", {"gpu": args.gpu, "config": args.config})
         return 0
 
-    if args.config is None:
-        logger.warning(
-            "No config file provided; continuing may require defaults inside the package"
-        )
-
     try:
         run_package(args.config)
     except SystemExit as e:
@@ -109,7 +99,3 @@ def main(argv=None):
         logger.exception("Run failed: %s", e)
         return 2
     return 0
-
-
-if __name__ == "__main__":
-    raise SystemExit(main(sys.argv[1:]))
