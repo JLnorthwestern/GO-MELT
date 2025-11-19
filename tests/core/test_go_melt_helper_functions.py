@@ -4,6 +4,7 @@ import jax.numpy as jnp
 import pytest
 from pathlib import Path
 import dill
+import sys
 
 from go_melt.core.data_structures import SimulationState
 from go_melt.core.go_melt_helper_functions import (
@@ -13,8 +14,68 @@ from go_melt.core.go_melt_helper_functions import (
     multi_step_execution,
     time_loop_post_execution,
     post_time_loop_finalization,
+    clear_jax_function_caches,
 )
 from go_melt.utils.testing_helper_functions import compare_values
+import go_melt.core.go_melt_helper_functions as helper_functions
+
+
+def test_single_step_execution_dwell():
+    # Arrange: load input state
+    with open(Path("tests/core/inputs/inputs_single_step_execution.pkl"), "rb") as f:
+        laser_all, simulation_state = dill.load(f)
+
+    # Act: run the function under test
+    simulation_state.wait_inc = 201
+    simulation_state.Levels[3]["Tprime0"] = jnp.ones_like(
+        simulation_state.Levels[3]["Tprime0"]
+    )
+    simulation_state.laser_prev_z = 0.5
+    laser_all = laser_all.at[:, 4].set(0)
+
+    simulation_state_result = single_step_execution(laser_all, simulation_state)
+
+
+def test_single_step_execution_edge_cases(monkeypatch):
+    # Arrange: load input state
+    with open(Path("tests/core/inputs/inputs_single_step_execution.pkl"), "rb") as f:
+        laser_all, simulation_state = dill.load(f)
+
+    # Act: run the function under test
+    simulation_state.time_inc = 1
+    simulation_state.Nonmesh["record_TAM"] = 1
+
+    # Patch jnp.savez so it doesn't write files
+    called = {}
+
+    def fake_savez(filename, **kwargs):
+        called["filename"] = filename
+        called["kwargs"] = kwargs
+
+    monkeypatch.setattr(jnp, "savez", fake_savez)
+
+    called2 = {}
+    monkeypatch.setattr(
+        helper_functions,
+        "save_object",
+        lambda obj, filename: called2.update({"obj": obj, "filename": filename}),
+    )
+    called3 = {}
+    monkeypatch.setattr("os.path.exists", lambda path: False)
+    monkeypatch.setattr("os.makedirs", lambda path: called3.setdefault("path", path))
+
+    simulation_state_result = single_step_execution(laser_all, simulation_state)
+
+    # Assert: ensure fake_savez was called with expected args
+    assert "filename" in called
+    assert "accum_time" in called["kwargs"]
+    # filename should include layer_num suffix
+    assert (
+        str(simulation_state_result.Nonmesh["layer_num"] - 1).zfill(4)
+        in called["filename"]
+    )
+    assert called2["obj"][0] == simulation_state_result.Levels
+    assert called3["path"] == simulation_state.checkpoint_path
 
 
 def test_pre_time_loop_initialization_types_and_values():
@@ -119,9 +180,40 @@ def test_time_loop_pre_execution():
     )
 
     # Assert: exact equality with saved outputs
+    assert simulation_state_result.ongoing_simulation == True
     _assert_simulation_state_equal(simulation_state_result, simulation_state_output)
     compare_values(laser_all_result, laser_all_output)
     compare_values(single_step_result, single_step_output)
+
+
+def test_time_loop_pre_execution_edge_cases():
+    # Arrange: load input state
+    with open(Path("tests/core/inputs/inputs_time_loop_pre_execution.pkl"), "rb") as f:
+        simulation_state = dill.load(f)
+
+    num_lines_expected = (
+        simulation_state.subcycle[0]
+        * simulation_state.subcycle[1]
+        * simulation_state.subcycle[-1]
+    )
+    raw_lines = [
+        simulation_state.tool_path_file.readline().strip()
+        for _ in range(num_lines_expected - 1)
+    ]
+    raw_lines.append("")
+    simulation_state.tool_path_file = io.StringIO("\n".join(raw_lines) + "\n")
+    # Act: run the function under test
+    simulation_state_result, laser_all_result, single_step_result = (
+        time_loop_pre_execution(simulation_state)
+    )
+    assert laser_all_result.shape[0] == 15
+    assert single_step_result == True
+    assert simulation_state_result.ongoing_simulation == False
+    simulation_state_result, _, single_step_result = time_loop_pre_execution(
+        simulation_state_result
+    )
+    assert single_step_result == False
+    print("here")
 
 
 def test_single_step_execution():
@@ -230,6 +322,25 @@ def test_post_time_loop_finalization_runs(monkeypatch):
     # Assert: no exception raised
     # (pytest will mark the test as passed if we reach here)
     pass
+
+
+def test_clear_jax_function_caches(monkeypatch):
+    buf = io.StringIO()
+    monkeypatch.setattr(sys, "stdout", buf)
+    clear_jax_function_caches(funcs=None)
+    output = buf.getvalue()
+    assert "Cleared caches:" in output
+
+    # Reset buffer for next case
+    buf.truncate(0)
+    buf.seek(0)
+
+    def fake_function():
+        return
+
+    clear_jax_function_caches(funcs=[fake_function])
+    output = buf.getvalue()
+    assert "No caches cleared" in output
 
 
 def _assert_simulation_state_equal(a, b):

@@ -15,8 +15,32 @@ from go_melt.core.setup_dictionary_functions import (
 )
 
 
-def test_SetupProperties_SetupLevels_SetupNonmesh():
+def test_SetupProperties_SetupLevels_SetupNonmesh(monkeypatch):
     input_file = "examples/example_unit.json"
+    with open(input_file, "r") as read_file:
+        solver_input = json.load(read_file)
+
+    Properties = SetupProperties(solver_input.get("properties", {}))
+    assert isinstance(Properties, dict)
+
+    Levels = SetupLevels(solver_input, Properties)
+    assert isinstance(Levels, list)
+
+    # Patch os.path.exists to always return False, so the code will try to call os.makedirs
+    called = {}
+    monkeypatch.setattr("os.path.exists", lambda path: False)
+    monkeypatch.setattr("os.makedirs", lambda path: called.setdefault("path", path))
+
+    Nonmesh = SetupNonmesh(solver_input.get("nonmesh", {}))
+    assert isinstance(Nonmesh, dict)
+
+    # Verify that os.makedirs was "called" with the expected save_path
+    assert "path" in called
+    assert called["path"] == Nonmesh["save_path"]
+
+
+def test_SetupProperties_SetupLevels_SetupNonmesh_Multilayer():
+    input_file = "examples/example_multilayer_unit.json"
     with open(input_file, "r") as read_file:
         solver_input = json.load(read_file)
     Properties = SetupProperties(solver_input.get("properties", {}))

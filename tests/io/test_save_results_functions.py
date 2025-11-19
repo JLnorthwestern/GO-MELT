@@ -2,6 +2,8 @@ import os
 import numpy as np
 import pytest
 import jax.numpy as jnp
+import io
+import dill
 
 # Adjust this import to match where the functions actually live in your project.
 # This test assumes the functions are in go_melt.utils.save_vtk
@@ -12,6 +14,8 @@ from go_melt.io.save_results_functions import (
     saveResultsFinal,
     saveFinalResult,
     saveState,
+    saveCustom,
+    save_object,
 )
 
 
@@ -60,6 +64,26 @@ def test_save_results_functions(monkeypatch, tmp_path):
     saveState(
         Level, save_str="Test_", record_lab=42, save_path=save_path, zoffset=0.123
     )
+    saveCustom(Level, Level["T0"], "Temperature (K)", save_path, "test_T", 0)
+
+
+class NonClosingBytesIO(io.BytesIO):
+    def close(self):
+        # Don't actually close, just reset position
+        self.seek(0)
+
+
+def test_save_object_no_disk(monkeypatch):
+    obj = {"a": 1, "b": [1, 2, 3]}
+    fake_file = NonClosingBytesIO()
+
+    monkeypatch.setattr("builtins.open", lambda f, mode: fake_file)
+    monkeypatch.setattr(dill, "dump", lambda o, f, protocol: f.write(b"FAKE"))
+
+    save_object(obj, "fake_filename.pkl")
+
+    fake_file.seek(0)
+    assert fake_file.read() == b"FAKE"
 
 
 if __name__ == "__main__":

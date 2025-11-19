@@ -81,6 +81,45 @@ def test_subcycleGOMELT():
     assert isinstance(Levels, list)
 
 
+def test_stepGOMELT_TAM():
+    with open("tests/core/inputs/inputs_stepGOMELT.pkl", "rb") as f:
+        (
+            Levels,
+            ne_nn,
+            tmp_ne_nn,
+            Shapes,
+            LInterp,
+            laser_position,
+            properties,
+            dt,
+            laser_power,
+            substrate,
+            max_accum_time,
+            accum_time,
+            record_accum,
+        ) = dill.load(f)
+
+    # Turn TAM recording on to access end part of code
+    record_accum = 1
+
+    Levels, max_accum_time, accum_time = stepGOMELT(
+        Levels,
+        ne_nn,
+        tmp_ne_nn,
+        Shapes,
+        LInterp,
+        laser_position,
+        properties,
+        dt,
+        laser_power,
+        substrate,
+        max_accum_time,
+        accum_time,
+        record_accum,
+    )
+    assert isinstance(Levels, list)
+
+
 def test_subcycleGOMELT_TAM():
     with open("tests/core/inputs/inputs_subcycleGOMELT.pkl", "rb") as f:
         (

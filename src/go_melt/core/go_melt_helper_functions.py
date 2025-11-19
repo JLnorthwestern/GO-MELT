@@ -351,14 +351,15 @@ def parse_line(line: str) -> list[float]:
     return [float(val) for val in line.split(",") if val]
 
 
-def clear_jax_function_caches():
+def clear_jax_function_caches(funcs=None):
     """Clear JAX compilation caches using _clear_cache only."""
-    funcs = [
-        stepGOMELT,
-        stepGOMELTDwellTime,
-        subcycleGOMELT,
-        moveEverything,
-    ]
+    if funcs is None:
+        funcs = [
+            stepGOMELT,
+            stepGOMELTDwellTime,
+            subcycleGOMELT,
+            moveEverything,
+        ]
     cleared = []
     for fn in funcs:
         try:
