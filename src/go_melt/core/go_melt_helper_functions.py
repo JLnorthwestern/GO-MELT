@@ -38,11 +38,12 @@ from go_melt.io.toolpath_functions import count_lines, parsingGcode
 def single_step_execution(
     laser_all: jnp.ndarray, state: SimulationState
 ) -> SimulationState:
+
+    new_checkpoint = False
     for laser_pos in laser_all:
         state.wait_inc = state.wait_inc + 1 if laser_pos[4] == 0 else 0
 
         # Save checkpoint if layer changes and not from checkpoint
-        new_checkpoint = False
         if (
             laser_pos[2] != state.laser_prev_z
             and state.time_inc > 0
@@ -204,7 +205,7 @@ def single_step_execution(
             # Dwell time: only update Level 1
             if (
                 not (state.Levels[2]["Tprime0"] == 0).all()
-                and not (state.Levels[3]["Tprime0"] == 0).all()
+                or not (state.Levels[3]["Tprime0"] == 0).all()
             ):
                 state.dwell_time_count = (
                     state.Nonmesh["wait_time"] * state.Nonmesh["timestep_L3"]
