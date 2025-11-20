@@ -26,7 +26,7 @@ def computeLevelSource(
     quadrature integration, then projects the result onto the target level
     (Level 1 or Level 2) using the provided shape function matrices.
     """
-    Level3_num_elems = ne_nn[1]
+    Level3_num_elems = ne_nn[0][3]
     Level3_to_Target_N = LevelShape[0]
     Level3_to_Target_sum_operator = LevelShape[2]
 
@@ -87,8 +87,8 @@ def computeSourcesL3(
     This function evaluates the laser heat source at quadrature points
     using the Level 3 mesh and assembles the global source vector.
     """
-    Level3_num_elems = ne_nn[1]
-    Level3_num_nodes = ne_nn[4]
+    Level3_num_elems = ne_nn[0][3]
+    Level3_num_nodes = ne_nn[1][3]
 
     # Get shape functions and quadrature weights
     coords = getSampleCoords(Level)
@@ -144,8 +144,8 @@ def computeSources(
     Level3_to_Level2_N = Shapes[2][0]
     Level3_to_Level1_sum_operator = Shapes[1][2]
     Level3_to_Level2_sum_operator = Shapes[2][2]
-    Level3_num_elems = ne_nn[1]
-    Level3_num_nodes = ne_nn[4]
+    Level3_num_elems = ne_nn[0][3]
+    Level3_num_nodes = ne_nn[1][3]
 
     # Get shape functions and quadrature weights for Level 3 elements
     coords = getSampleCoords(Level)

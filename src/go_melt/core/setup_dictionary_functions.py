@@ -335,16 +335,23 @@ def SetupNonmesh(nonmesh_input: dict) -> dict:
     return structure_to_dict(Nonmesh)
 
 
-def SetupStaticNodesAndElements(Levels: list[dict]) -> tuple[int]:
+def SetupStaticNodesAndElements(Levels: list[dict]) -> tuple[tuple[int]]:
     """
     Extract static element and node counts from a list of level dictionaries.
     """
     return (
-        Levels[2]["ne"].tolist(),
-        Levels[3]["ne"].tolist(),
-        Levels[1]["nn"].tolist(),
-        Levels[2]["nn"].tolist(),
-        Levels[3]["nn"].tolist(),
+        (
+            Levels[0]["ne"].tolist(),
+            Levels[1]["ne"].tolist(),
+            Levels[2]["ne"].tolist(),
+            Levels[3]["ne"].tolist(),
+        ),
+        (
+            Levels[0]["nn"].tolist(),
+            Levels[1]["nn"].tolist(),
+            Levels[2]["nn"].tolist(),
+            Levels[3]["nn"].tolist(),
+        ),
     )
 
 

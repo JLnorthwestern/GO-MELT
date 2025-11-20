@@ -77,9 +77,9 @@ def stepGOMELT(
     Fc, Fm, Ff = computeSources(
         L3, laser_position, Shapes, ne_nn, properties, laser_power
     )
-    Fc = computeConvRadBC(L1, L1["T0"], tmp_ne_nn[0], ne_nn[2], properties, Fc)
-    Fm = computeConvRadBC(L2, L2["T0"], ne_nn[0], ne_nn[3], properties, Fm)
-    Ff = computeConvRadBC(L3, L3["T0"], ne_nn[1], ne_nn[4], properties, Ff)
+    Fc = computeConvRadBC(L1, L1["T0"], tmp_ne_nn[0], ne_nn[1][1], properties, Fc)
+    Fm = computeConvRadBC(L2, L2["T0"], ne_nn[0][2], ne_nn[1][2], properties, Fm)
+    Ff = computeConvRadBC(L3, L3["T0"], ne_nn[0][3], ne_nn[1][3], properties, Ff)
     F = [0, Fc, Fm, Ff]  # Source terms for Levels 1–3
 
     # --- Predictor step ---
@@ -393,7 +393,7 @@ def computeLevel1predictor(
         Levels, ne_nn, laser_position, Shapes[1], properties, laser_powers
     )
     L1F = computeConvRadBC(
-        Levels[1], Levels[1]["T0"], tmp_ne_nn[0], ne_nn[2], properties, L1F
+        Levels[1], Levels[1]["T0"], tmp_ne_nn[0], ne_nn[1][1], properties, L1F
     )
     L1V = computeL1TprimeTerms_Part1(Levels, ne_nn, L3k_L1, Shapes, L2k_L1)
 
@@ -458,8 +458,8 @@ def compute_Level2_step(
     L2F = computeConvRadBC(
         Levels[2],
         _L2carry.T0,
-        ne_nn[0],
-        ne_nn[3],
+        ne_nn[0][2],
+        ne_nn[1][2],
         properties,
         L2F,
     )
@@ -501,7 +501,7 @@ def compute_Level3_step(
     L3F = computeSourcesL3(
         Levels[3], laser_position[LLidx, :], ne_nn, properties, laser_powers[LLidx]
     )
-    L3F = computeConvRadBC(Levels[3], _L3carry[0], ne_nn[1], ne_nn[4], properties, L3F)
+    L3F = computeConvRadBC(Levels[3], _L3carry[0], ne_nn[0][3], ne_nn[1][3], properties, L3F)
 
     # --- Boundary condition interpolation ---
     alpha_L3 = (_L3sub + 1) / subcycle[4]

@@ -32,7 +32,7 @@ def stepGOMELTDwellTime(
     temperature above the powder line.
     """
     L1 = Levels[1]
-    num_nodes_L1 = ne_nn[2]
+    num_nodes_L1 = ne_nn[1][1]
     num_elements_L1 = tmp_ne_nn[0]
     inactive_start_idx = tmp_ne_nn[1]
 
@@ -80,7 +80,7 @@ def computeL1Temperature(
     finite element solver. It includes source terms, subgrid corrections, and
     enforces boundary and ambient conditions.
     """
-    num_nodes_L1 = ne_nn[2]
+    num_nodes_L1 = ne_nn[1][1]
     num_elements_L1 = tmp_ne_nn[0]
     inactive_start_idx = tmp_ne_nn[1]
 
@@ -126,8 +126,8 @@ def computeL2Temperature(
     matrix-free FEM, incorporating subgrid corrections and boundary conditions
     interpolated from the coarse-scale (Level 1) solution.
     """
-    num_elems_L2 = ne_nn[0]
-    num_nodes_L2 = ne_nn[3]
+    num_elems_L2 = ne_nn[0][2]
+    num_nodes_L2 = ne_nn[1][2]
 
     # Interpolate Level 1 temperature to Level 2 boundary
     TfAll = interpolate_w_matrix(interpolate_Level1_to_Level2, new_Level1_temperature)
@@ -170,8 +170,8 @@ def computeSolutions_L3(
     matrix-free FEM, applying Dirichlet boundary conditions interpolated
     from the meso-scale (Level 2) solution.
     """
-    num_elems_L3 = ne_nn[1]
-    num_nodes_L3 = ne_nn[4]
+    num_elems_L3 = ne_nn[0][3]
+    num_nodes_L3 = ne_nn[1][3]
 
     # Interpolate Level 2 temperature to Level 3 boundary
     TfAll = interpolate_w_matrix(interpolate_Level2_to_Level3, new_Level2_temperature)
@@ -217,11 +217,11 @@ def computeSolutions(
     at coarse, meso, and fine levels. It uses matrix-free finite element methods and
     interpolates between levels to apply boundary conditions and source terms.
     """
-    num_elems_L2 = ne_nn[0]
-    num_elems_L3 = ne_nn[1]
-    num_nodes_L1 = ne_nn[2]
-    num_nodes_L2 = ne_nn[3]
-    num_nodes_L3 = ne_nn[4]
+    num_elems_L2 = ne_nn[0][2]
+    num_elems_L3 = ne_nn[0][3]
+    num_nodes_L1 = ne_nn[1][1]
+    num_nodes_L2 = ne_nn[1][2]
+    num_nodes_L3 = ne_nn[1][3]
     num_elements_L1 = tmp_ne_nn[0]
     inactive_start_idx = tmp_ne_nn[1]
     interpolate_Level1_to_Level2 = LInterp[0]

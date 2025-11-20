@@ -17,10 +17,10 @@ from go_melt.utils.interpolation_functions import (
 )
 
 
-@partial(jax.jit, static_argnames=["level_num_elems"])
+@partial(jax.jit, static_argnames=["ne_nn"])
 def computeL2TprimeTerms_Part1(
     Levels: dict[int, dict],
-    level_num_elems: tuple,
+    ne_nn: tuple,
     L3Tprime0: jnp.ndarray,
     L3k: jnp.ndarray,
     Shapes: tuple,
@@ -29,7 +29,7 @@ def computeL2TprimeTerms_Part1(
     Computes subgrid conduction influence (K product terms) from Eqns. P3/C3 in GO-MELT
     paper by Leonor and Wagner (2024).
     """
-    Level3_num_elems = level_num_elems[1]
+    Level3_num_elems = ne_nn[0][3]
     Level3_to_Level2_dNdx = Shapes[2][1]
     Level3_to_Level2_sum_operator = Shapes[2][2]
 
@@ -68,10 +68,10 @@ def computeL2TprimeTerms_Part1(
     return Level2_Tprime_source
 
 
-@partial(jax.jit, static_argnames=["level_num_elems"])
+@partial(jax.jit, static_argnames=["ne_nn"])
 def computeL2TprimeTerms_Part2(
     Levels: dict[int, dict],
-    level_num_elems: tuple,
+    ne_nn: tuple,
     Level3_Tprime1: jnp.ndarray,
     Level3_Tprime0: jnp.ndarray,
     Level3_rhocp: jnp.ndarray,
@@ -83,7 +83,7 @@ def computeL2TprimeTerms_Part2(
     Computes subgrid capacitance influence (M product term) from Eqn. C3 in GO-MELT
     paper by Leonor and Wagner (2024).
     """
-    Level3_num_elems = level_num_elems[1]
+    Level3_num_elems = ne_nn[0][3]
     Level3_to_Level2_N = Shapes[2][0]
     Level3_to_Level2_sum_operator = Shapes[2][2]
 
@@ -123,10 +123,10 @@ def computeL2TprimeTerms_Part2(
     return Level2_Tprime_Source
 
 
-@partial(jax.jit, static_argnames=["level_num_elems"])
+@partial(jax.jit, static_argnames=["ne_nn"])
 def computeL1TprimeTerms_Part1(
     Levels: dict[int, dict],
-    level_num_elems: tuple,
+    ne_nn: tuple,
     Level3_k: jnp.ndarray,
     Shapes: tuple,
     Level2_k: jnp.ndarray,
@@ -135,8 +135,8 @@ def computeL1TprimeTerms_Part1(
     Computes subgrid conduction influence (K product terms) from Eqns. P1/C1 in GO-MELT
     paper by Leonor and Wagner (2024).
     """
-    Level2_num_elems = level_num_elems[0]
-    Level3_num_elems = level_num_elems[1]
+    Level2_num_elems = ne_nn[0][2]
+    Level3_num_elems = ne_nn[0][3]
     Level2_to_Level1_dNdx = Shapes[0][1]
     Level3_to_Level1_dNdx = Shapes[1][1]
     Level2_to_Level1_sum_operator = Shapes[0][2]
@@ -208,10 +208,10 @@ def computeL1TprimeTerms_Part1(
     return Level1_Tprime_source
 
 
-@partial(jax.jit, static_argnames=["level_num_elems"])
+@partial(jax.jit, static_argnames=["ne_nn"])
 def computeL1TprimeTerms_Part2(
     Levels: dict[int, dict],
-    level_num_elems: tuple,
+    ne_nn: tuple,
     Level3_Tprime1: jnp.ndarray,
     Level2_Tprime1: jnp.ndarray,
     Level3_rhocp: jnp.ndarray,
@@ -224,8 +224,8 @@ def computeL1TprimeTerms_Part2(
     Computes subgrid capacitance influence (M product terms) from Eqn. C1 in GO-MELT
     paper by Leonor and Wagner (2024).
     """
-    Level2_num_elems = level_num_elems[0]
-    Level3_num_elems = level_num_elems[1]
+    Level2_num_elems = ne_nn[0][2]
+    Level3_num_elems = ne_nn[0][3]
     Level2_to_Level1_N = Shapes[0][0]
     Level3_to_Level1_N = Shapes[1][0]
     Level2_to_Level1_sum_operator = Shapes[0][2]
