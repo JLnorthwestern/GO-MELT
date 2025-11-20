@@ -20,18 +20,30 @@
             ]
         },
         "conditions": {
-            "x": [
-                298.15,
-                298.15
-            ],
-            "y": [
-                298.15,
-                298.15
-            ],
-            "z": [
-                298.15,
-                298.15
-            ]
+            "west": {
+                "type": "Dirichlet",
+                "value": 298.15
+            },
+            "east": {
+                "type": "Dirichlet",
+                "value": 298.15
+            },
+            "north": {
+                "type": "Dirichlet",
+                "value": 298.15
+            },
+            "south": {
+                "type": "Dirichlet",
+                "value": 298.15
+            },
+            "top": {
+                "type": "Neumann",
+                "function": "Surface"
+            },
+            "bottom": {
+                "type": "Dirichlet",
+                "value": 298.15
+            }
         }
     },
     "Level2": {

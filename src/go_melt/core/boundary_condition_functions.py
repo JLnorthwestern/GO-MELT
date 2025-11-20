@@ -9,12 +9,38 @@ from go_melt.utils.gaussian_quadrature_functions import (
 from go_melt.utils.helper_functions import convert2XYZ
 
 
-def getBCindices(x: obj) -> list[jnp.ndarray]:
+class Boundary:
+    def __init__(self):
+        self.type = None
+        self.value = None
+        self.function = None
+        self.indices = None
+
+
+def ensure_conditions(level):
+    """
+    Make sure level.conditions exists and has all boundary slots.
+    """
+    if not hasattr(level, "conditions") or level.conditions is None:
+        # create empty boundary objects for all faces
+        level.conditions = type("Conditions", (), {})()
+        level.conditions.west = Boundary()
+        level.conditions.east = Boundary()
+        level.conditions.south = Boundary()
+        level.conditions.north = Boundary()
+        level.conditions.bottom = Boundary()
+        level.conditions.top = Boundary()
+    return level
+
+
+def getBCindices(level: obj) -> list[jnp.ndarray]:
     """
     Compute boundary condition indices for a structured 3D mesh.
     """
-    nodes_x, nodes_y, nodes_z = x.nodes[0], x.nodes[1], x.nodes[2]
-    total_nodes = x.nn
+    ensure_conditions(level)
+
+    nodes_x, nodes_y, nodes_z = level.nodes[0], level.nodes[1], level.nodes[2]
+    total_nodes = level.nn
 
     # Bottom face (z = 0)
     bidx = jnp.arange(0, nodes_x * nodes_y)
@@ -22,10 +48,10 @@ def getBCindices(x: obj) -> list[jnp.ndarray]:
     # Top face (z = nodes_z - 1)
     tidx = jnp.arange(nodes_x * nodes_y * (nodes_z - 1), total_nodes)
 
-    # West face (x = 0)
+    # West face (level = 0)
     widx = jnp.arange(0, total_nodes, nodes_x)
 
-    # East face (x = nodes_x - 1)
+    # East face (level = nodes_x - 1)
     eidx = jnp.arange(nodes_x - 1, total_nodes, nodes_x)
 
     # South face (y = 0)
@@ -42,7 +68,14 @@ def getBCindices(x: obj) -> list[jnp.ndarray]:
     )
     nidx = nidx.reshape(-1)
 
-    return [widx, eidx, sidx, nidx, bidx, tidx]
+    level.conditions.west.indices = widx
+    level.conditions.east.indices = eidx
+    level.conditions.south.indices = sidx
+    level.conditions.north.indices = nidx
+    level.conditions.bottom.indices = bidx
+    level.conditions.top.indices = tidx
+
+    return level
 
 
 @jax.jit
@@ -55,19 +88,27 @@ def assignBCs(RHS: jnp.ndarray, Levels: list[dict]) -> jnp.ndarray:
     Levels dictionary.
     """
     _RHS = RHS
-    _RHS = _RHS.at[Levels[1]["BC"][2]].set(Levels[1]["conditions"]["y"][0])  # y-min
-    _RHS = _RHS.at[Levels[1]["BC"][3]].set(Levels[1]["conditions"]["y"][1])  # y-max
-    _RHS = _RHS.at[Levels[1]["BC"][0]].set(Levels[1]["conditions"]["x"][0])  # x-min
-    _RHS = _RHS.at[Levels[1]["BC"][1]].set(Levels[1]["conditions"]["x"][1])  # x-max
-    _RHS = _RHS.at[Levels[1]["BC"][4]].set(Levels[1]["conditions"]["z"][0])  # z-min
+    _RHS = _RHS.at[Levels[1]["conditions"]["west"]["indices"]].set(
+        Levels[1]["conditions"]["west"]["value"]
+    )  # y-min
+    _RHS = _RHS.at[Levels[1]["conditions"]["east"]["indices"]].set(
+        Levels[1]["conditions"]["east"]["value"]
+    )  # y-max
+    _RHS = _RHS.at[Levels[1]["conditions"]["south"]["indices"]].set(
+        Levels[1]["conditions"]["south"]["value"]
+    )  # x-min
+    _RHS = _RHS.at[Levels[1]["conditions"]["north"]["indices"]].set(
+        Levels[1]["conditions"]["north"]["value"]
+    )  # x-max
+    _RHS = _RHS.at[Levels[1]["conditions"]["bottom"]["indices"]].set(
+        Levels[1]["conditions"]["bottom"]["value"]
+    )  # z-min
 
     return _RHS
 
 
 @jax.jit
-def assignBCsFine(
-    RHS: jnp.ndarray, TfAll: jnp.ndarray, BC_surface_indices: list[jnp.ndarray]
-) -> jnp.ndarray:
+def assignBCsFine(RHS: jnp.ndarray, TfAll: jnp.ndarray, level: dict) -> jnp.ndarray:
     """
     Apply Dirichlet boundary conditions to the fine-level RHS vector.
 
@@ -75,11 +116,21 @@ def assignBCsFine(
     corresponding values from the full fine-scale solution `TfAll`.
     """
     _RHS = RHS
-    _RHS = _RHS.at[BC_surface_indices[2]].set(TfAll[BC_surface_indices[2]])  # y-min
-    _RHS = _RHS.at[BC_surface_indices[3]].set(TfAll[BC_surface_indices[3]])  # y-max
-    _RHS = _RHS.at[BC_surface_indices[0]].set(TfAll[BC_surface_indices[0]])  # x-min
-    _RHS = _RHS.at[BC_surface_indices[1]].set(TfAll[BC_surface_indices[1]])  # x-max
-    _RHS = _RHS.at[BC_surface_indices[4]].set(TfAll[BC_surface_indices[4]])  # z-min
+    _RHS = _RHS.at[level["conditions"]["west"]["indices"]].set(
+        TfAll[level["conditions"]["west"]["indices"]]
+    )
+    _RHS = _RHS.at[level["conditions"]["east"]["indices"]].set(
+        TfAll[level["conditions"]["east"]["indices"]]
+    )
+    _RHS = _RHS.at[level["conditions"]["south"]["indices"]].set(
+        TfAll[level["conditions"]["south"]["indices"]]
+    )
+    _RHS = _RHS.at[level["conditions"]["north"]["indices"]].set(
+        TfAll[level["conditions"]["north"]["indices"]]
+    )
+    _RHS = _RHS.at[level["conditions"]["bottom"]["indices"]].set(
+        TfAll[level["conditions"]["bottom"]["indices"]]
+    )
     return _RHS
 
 

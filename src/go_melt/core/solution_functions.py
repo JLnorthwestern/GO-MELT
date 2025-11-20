@@ -143,7 +143,7 @@ def computeL2Temperature(
     )
 
     # Apply Dirichlet boundary conditions from interpolated Level 1 solution
-    new_Level2_temperature = assignBCsFine(L2T, TfAll, Levels[2]["BC"])
+    new_Level2_temperature = assignBCsFine(L2T, TfAll, Levels[2])
 
     return new_Level2_temperature
 
@@ -187,9 +187,7 @@ def computeSolutions_L3(
     )
 
     # Apply Dirichlet boundary conditions from interpolated Level 2 solution
-    new_Level3_temperature = assignBCsFine(
-        new_Level3_temperature, TfAll, Levels[3]["BC"]
-    )
+    new_Level3_temperature = assignBCsFine(new_Level3_temperature, TfAll, Levels[3])
 
     return new_Level3_temperature
 
@@ -255,7 +253,7 @@ def computeSolutions(
         Levels_sources[2],
         Level2_Tprime_source,
     )
-    new_Level2_temperature = assignBCsFine(L2T, TfAll, Levels[2]["BC"])
+    new_Level2_temperature = assignBCsFine(L2T, TfAll, Levels[2])
 
     # Interpolate Level 2 solution to Level 3 for boundary conditions
     TfAll = interpolate_w_matrix(interpolate_Level2_to_Level3, new_Level2_temperature)
@@ -272,9 +270,7 @@ def computeSolutions(
         Levels_sources[3],
         subgrid_source_term=0,
     )
-    new_Level3_temperature = assignBCsFine(
-        new_Level3_temperature, TfAll, Levels[3]["BC"]
-    )
+    new_Level3_temperature = assignBCsFine(new_Level3_temperature, TfAll, Levels[3])
 
     return new_Level1_temperature, new_Level2_temperature, new_Level3_temperature
 

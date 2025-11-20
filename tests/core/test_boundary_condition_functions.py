@@ -17,22 +17,14 @@ class DummyObj:
 
 def test_getBCindices_simple_cube():
     x = DummyObj([2, 2, 2])  # 2x2x2 cube
-    indices = getBCindices(x)
+    x = getBCindices(x)
 
-    widx, eidx, sidx, nidx, bidx, tidx = indices
-
-    # Bottom face should be first nx*ny nodes
-    assert jnp.all(bidx == jnp.array([0, 1, 2, 3]))
-    # Top face should be last nx*ny nodes
-    assert jnp.all(tidx == jnp.array([4, 5, 6, 7]))
-    # West face should be nodes at x=0
-    assert jnp.all(widx == jnp.array([0, 2, 4, 6]))
-    # East face should be nodes at x=nx-1
-    assert jnp.all(eidx == jnp.array([1, 3, 5, 7]))
-    # South face should include y=0 plane
-    assert sidx.shape[0] == 2 * 2  # nx * nz
-    # North face should include y=ny-1 plane
-    assert nidx.shape[0] == 2 * 2
+    assert jnp.all(x.conditions.bottom.indices == jnp.array([0, 1, 2, 3]))
+    assert jnp.all(x.conditions.top.indices == jnp.array([4, 5, 6, 7]))
+    assert jnp.all(x.conditions.west.indices == jnp.array([0, 2, 4, 6]))
+    assert jnp.all(x.conditions.east.indices == jnp.array([1, 3, 5, 7]))
+    assert x.conditions.south.indices.shape[0] == 4  # nx * nz
+    assert x.conditions.north.indices.shape[0] == 4  # nx * nz
 
 
 def test_assignBCs_applies_conditions():
@@ -40,37 +32,41 @@ def test_assignBCs_applies_conditions():
     Levels = [
         {},  # Level 0 unused
         {
-            "BC": [
-                jnp.array([0]),  # x-min
-                jnp.array([1]),  # x-max
-                jnp.array([2]),  # y-min
-                jnp.array([3]),  # y-max
-                jnp.array([4]),  # z-min
-            ],
-            "conditions": {"x": [10.0, 20.0], "y": [30.0, 40.0], "z": [50.0]},
+            "conditions": {
+                "west": {"indices": jnp.array([0]), "value": 10.0},
+                "east": {"indices": jnp.array([1]), "value": 20.0},
+                "south": {"indices": jnp.array([2]), "value": 30.0},
+                "north": {"indices": jnp.array([3]), "value": 40.0},
+                "bottom": {"indices": jnp.array([4]), "value": 50.0},
+                "top": {"indices": jnp.array([5]), "value": 60.0},  # optional
+            }
         },
     ]
 
     result = assignBCs(RHS, Levels)
-    assert result[0] == 10.0
-    assert result[1] == 20.0
-    assert result[2] == 30.0
-    assert result[3] == 40.0
-    assert result[4] == 50.0
+
+    assert result[0] == 10.0  # west
+    assert result[1] == 20.0  # east
+    assert result[2] == 30.0  # south
+    assert result[3] == 40.0  # north
+    assert result[4] == 50.0  # bottom
 
 
 def test_assignBCsFine_copies_values():
     RHS = jnp.zeros(6)
     TfAll = jnp.arange(6) * 10.0
-    BC = [
-        jnp.array([0]),  # x-min
-        jnp.array([1]),  # x-max
-        jnp.array([2]),  # y-min
-        jnp.array([3]),  # y-max
-        jnp.array([4]),  # z-min
-    ]
+    level = {
+        "conditions": {
+            "west": {"indices": jnp.array([0]), "value": 10.0},
+            "east": {"indices": jnp.array([1]), "value": 20.0},
+            "south": {"indices": jnp.array([2]), "value": 30.0},
+            "north": {"indices": jnp.array([3]), "value": 40.0},
+            "bottom": {"indices": jnp.array([4]), "value": 50.0},
+            "top": {"indices": jnp.array([5]), "value": 60.0},  # optional
+        }
+    }
 
-    result = assignBCsFine(RHS, TfAll, BC)
+    result = assignBCsFine(RHS, TfAll, level)
     assert result[0] == TfAll[0]
     assert result[1] == TfAll[1]
     assert result[2] == TfAll[2]
