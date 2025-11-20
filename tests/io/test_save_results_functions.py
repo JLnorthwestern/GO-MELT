@@ -17,6 +17,7 @@ from go_melt.io.save_results_functions import (
     saveCustom,
     save_object,
 )
+import go_melt.io.save_results_functions as srf
 
 
 def test_save_results_functions(monkeypatch, tmp_path):
@@ -84,6 +85,35 @@ def test_save_object_no_disk(monkeypatch):
 
     fake_file.seek(0)
     assert fake_file.read() == b"FAKE"
+
+
+def test_record_first_call_invokes_save_object_once(monkeypatch):
+    calls = []
+
+    # Replace save_object with a dummy that just logs arguments
+    monkeypatch.setattr(
+        srf, "save_object", lambda obj, filename: calls.append((obj, filename))
+    )
+
+    # Force recording enabled
+    monkeypatch.setattr(srf, "RECORD_INPUTS_OUTPUTS", True)
+    srf._recorded_flags.clear()
+
+    @srf.record_first_call("dummy")
+    def dummy_func(x, y):
+        return x + y
+
+    # First call should trigger save_object twice (inputs + outputs)
+    result1 = dummy_func(2, 3)
+    assert result1 == 5
+    assert len(calls) == 2
+    assert "inputs_dummy.pkl" in calls[0][1]
+    assert "outputs_dummy.pkl" in calls[1][1]
+
+    # Second call should not trigger save_object again
+    result2 = dummy_func(10, 20)
+    assert result2 == 30
+    assert len(calls) == 2  # still only the two calls from the first invocation
 
 
 if __name__ == "__main__":
