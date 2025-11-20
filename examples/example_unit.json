@@ -41,8 +41,8 @@
                 "function": "Surface"
             },
             "bottom": {
-                "type": "Neumann",
-                "function": "Convection"
+                "type": "Dirichlet",
+                "value": 298.15
             }
         }
     },

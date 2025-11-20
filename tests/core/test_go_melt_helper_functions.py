@@ -24,7 +24,7 @@ import go_melt.core.go_melt_helper_functions as helper_functions
 def test_single_step_execution_dwell():
     # Arrange: load input state
     with open(Path("tests/core/inputs/inputs_single_step_execution.pkl"), "rb") as f:
-        laser_all, simulation_state = dill.load(f)
+        laser_all, simulation_state = dill.load(f)[0]
 
     # Act: run the function under test
     simulation_state.wait_inc = 201
@@ -40,7 +40,7 @@ def test_single_step_execution_dwell():
 def test_single_step_execution_edge_cases(monkeypatch):
     # Arrange: load input state
     with open(Path("tests/core/inputs/inputs_single_step_execution.pkl"), "rb") as f:
-        laser_all, simulation_state = dill.load(f)
+        laser_all, simulation_state = dill.load(f)[0]
 
     # Act: run the function under test
     simulation_state.time_inc = 1
@@ -259,7 +259,7 @@ def test_pre_time_loop_initialization_conditionals(monkeypatch):
 def test_time_loop_pre_execution():
     # Arrange: load input state
     with open(Path("tests/core/inputs/inputs_time_loop_pre_execution.pkl"), "rb") as f:
-        simulation_state = dill.load(f)
+        simulation_state = dill.load(f)[0][0]
 
     # Arrange: load expected outputs
     with open(
@@ -286,7 +286,7 @@ def test_time_loop_pre_execution():
 def test_time_loop_pre_execution_edge_cases():
     # Arrange: load input state
     with open(Path("tests/core/inputs/inputs_time_loop_pre_execution.pkl"), "rb") as f:
-        simulation_state = dill.load(f)
+        simulation_state = dill.load(f)[0][0]
 
     num_lines_expected = (
         simulation_state.subcycle[0]
@@ -316,7 +316,7 @@ def test_time_loop_pre_execution_edge_cases():
 def test_single_step_execution():
     # Arrange: load input state
     with open(Path("tests/core/inputs/inputs_single_step_execution.pkl"), "rb") as f:
-        laser_all, simulation_state = dill.load(f)
+        laser_all, simulation_state = dill.load(f)[0]
 
     # Arrange: load expected outputs
     with open(Path("tests/core/outputs/outputs_single_step_execution.pkl"), "rb") as f:
@@ -344,7 +344,7 @@ def test_single_step_execution():
 def test_multi_step_execution():
     # Arrange: load input state
     with open(Path("tests/core/inputs/inputs_multi_step_execution.pkl"), "rb") as f:
-        laser_all, simulation_state = dill.load(f)
+        laser_all, simulation_state = dill.load(f)[0]
 
     # Arrange: load expected outputs
     with open(Path("tests/core/outputs/outputs_multi_step_execution.pkl"), "rb") as f:
@@ -372,7 +372,7 @@ def test_multi_step_execution():
 def test_time_loop_post_execution():
     # Arrange: load input state
     with open(Path("tests/core/inputs/inputs_time_loop_post_execution.pkl"), "rb") as f:
-        simulation_state, laser_all, t_loop = dill.load(f)
+        simulation_state, laser_all, t_loop = dill.load(f)[0]
 
     # Arrange: load expected outputs
     with open(
@@ -396,7 +396,7 @@ def test_time_loop_post_execution():
 def test_time_loop_post_execution_edge(monkeypatch):
     # Arrange: load input state from pickle
     with open(Path("tests/core/inputs/inputs_time_loop_post_execution.pkl"), "rb") as f:
-        simulation_state, laser_all, t_loop = dill.load(f)
+        simulation_state, laser_all, t_loop = dill.load(f)[0]
 
     # Patch saveResults so it doesn't execute
     called = {}
@@ -430,7 +430,7 @@ def test_post_time_loop_finalization_runs(monkeypatch):
     with open(
         Path("tests/core/inputs/inputs_post_time_loop_finalization.pkl"), "rb"
     ) as f:
-        simulation_state = dill.load(f)
+        simulation_state = dill.load(f)[0][0]
 
     # Force the branch: record_TAM == 1
     simulation_state.Nonmesh["record_TAM"] = 1

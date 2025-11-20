@@ -31,10 +31,12 @@ from .data_structures import (
     SubcycleContext_Predictor,
     SubcycleContext_Corrector,
 )
+from go_melt.io.save_results_functions import record_first_call
 
 # TFSP: Temporary fix for single precision
 
 
+# @record_first_call("stepGOMELT")
 @partial(jax.jit, static_argnames=["ne_nn", "tmp_ne_nn", "substrate", "record_accum"])
 def stepGOMELT(
     Levels: list[dict],
@@ -155,6 +157,7 @@ def stepGOMELT(
     return Levels, max_accum_time, accum_time
 
 
+# @record_first_call("subcycleGOMELT")
 @partial(
     jax.jit,
     static_argnames=["ne_nn", "tmp_ne_nn", "substrate", "subcycle", "record_accum"],
@@ -347,6 +350,8 @@ def subcycleGOMELT(
     return Levels, L2all, L3pall, move_hist, LInterp, max_accum_time, accum_time
 
 
+# @record_first_call("computeLevel1predictor")
+@partial(jax.jit, static_argnames=["ne_nn", "tmp_ne_nn", "substrate"])
 def computeLevel1predictor(
     Levels,
     substrate,
@@ -409,6 +414,7 @@ def computeLevel1predictor(
     return (L3rhocp_L1, L2rhocp_L1, L1k, L1rhocp, L1F, L1V, L1T)
 
 
+@partial(jax.jit, static_argnames=["ne_nn", "substrate", "subcycle"])
 def compute_Level2_step(
     _L2sub: int,
     subcycle: tuple[int, int, int, float, float, float, int],
@@ -467,6 +473,7 @@ def compute_Level2_step(
     return (Lidx, L3rhocp_L2, L2S1, L2k, L2rhocp, L2F, L2V, _BC)
 
 
+@partial(jax.jit, static_argnames=["ne_nn", "substrate", "subcycle"])
 def compute_Level3_step(
     _L3carry,
     properties: dict,

@@ -47,6 +47,8 @@ def test_SetupProperties_SetupLevels_SetupNonmesh_edge():
     # --- Modify solver_input in memory ---
     solver_input["Level2"]["bounds"]["z"] = [-2.5, 0.5]
     solver_input["Level3"]["bounds"]["z"] = [-1.0, 0.5]
+    solver_input["Level1"]["conditions"]["bottom"]["type"] = "Neumann"
+    solver_input["Level1"]["conditions"]["bottom"]["function"] = "Convection"
 
     Properties = SetupProperties(solver_input.get("properties", {}))
     assert isinstance(Properties, dict)

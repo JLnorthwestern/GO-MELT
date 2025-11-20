@@ -21,7 +21,7 @@ def test_stepGOMELT():
             max_accum_time,
             accum_time,
             record_accum,
-        ) = dill.load(f)
+        ) = dill.load(f)[0]
     Levels, max_accum_time, accum_time = stepGOMELT(
         Levels,
         ne_nn,
@@ -58,7 +58,7 @@ def test_subcycleGOMELT():
             L1L2Eratio,
             L2L3Eratio,
             record_accum,
-        ) = dill.load(f)
+        ) = dill.load(f)[0]
         (Levels, L2all, L3pall, move_hist, LInterp, max_accum_time, accum_time) = (
             subcycleGOMELT(
                 Levels,
@@ -97,7 +97,7 @@ def test_stepGOMELT_TAM():
             max_accum_time,
             accum_time,
             record_accum,
-        ) = dill.load(f)
+        ) = dill.load(f)[0]
 
     # Turn TAM recording on to access end part of code
     record_accum = 1
@@ -138,7 +138,7 @@ def test_subcycleGOMELT_TAM():
             L1L2Eratio,
             L2L3Eratio,
             record_accum,
-        ) = dill.load(f)
+        ) = dill.load(f)[0]
 
         # Turn TAM recording on to access end part of code
         record_accum = 1

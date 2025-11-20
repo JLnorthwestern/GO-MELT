@@ -21,6 +21,7 @@ from go_melt.io.save_results_functions import (
     saveResultsFinal,
     saveCustom,
     save_object,
+    record_first_call,
 )
 from .setup_dictionary_functions import (
     SetupLevels,
@@ -35,6 +36,7 @@ from go_melt.io.print_functions import printLevelMaxMin
 from go_melt.io.toolpath_functions import count_lines, parsingGcode
 
 
+# @record_first_call("pre_time_loop_initialization")
 def pre_time_loop_initialization(input_file: Path) -> SimulationState:
     """
     This function initializes the simulation, sets up all levels, properties, and
@@ -179,6 +181,7 @@ def pre_time_loop_initialization(input_file: Path) -> SimulationState:
     return state
 
 
+# @record_first_call("time_loop_pre_execution")
 def time_loop_pre_execution(
     state: SimulationState,
 ) -> tuple[SimulationState, jnp.ndarray, bool]:
@@ -221,6 +224,7 @@ def time_loop_pre_execution(
     return state, laser_all, single_step
 
 
+# @record_first_call("single_step_execution")
 def single_step_execution(
     laser_all: jnp.ndarray, state: SimulationState
 ) -> SimulationState:
@@ -455,6 +459,7 @@ def single_step_execution(
     return state
 
 
+# @record_first_call("multi_step_execution")
 def multi_step_execution(
     laser_all: jnp.ndarray, state: SimulationState
 ) -> SimulationState:
@@ -498,6 +503,7 @@ def multi_step_execution(
     return state
 
 
+# @record_first_call("time_loop_post_execution")
 def time_loop_post_execution(
     state: SimulationState,
     laser_all: jnp.ndarray,
@@ -554,6 +560,7 @@ def time_loop_post_execution(
     return state
 
 
+# @record_first_call("post_time_loop_finalization")
 def post_time_loop_finalization(state: SimulationState) -> None:
     """
     Perform all finalization tasks after the simulation time loop.

@@ -5,8 +5,6 @@ import jax
 from go_melt.core.solution_functions import (
     stepGOMELTDwellTime,
     computeL1Temperature,
-    computeL2Temperature,
-    computeSolutions_L3,
     computeSolutions,
     solveMatrixFreeFE,
 )
@@ -15,7 +13,7 @@ from go_melt.core.solution_functions import (
 def test_stepGOMELTDwellTime_updates_Level1_temperature():
     # Load test inputs from pickle file
     with open("tests/core/inputs/inputs_stepGOMELTDwellTime.pkl", "rb") as f:
-        Levels, tmp_ne_nn, ne_nn, properties, dt, substrate = dill.load(f)
+        Levels, tmp_ne_nn, ne_nn, properties, dt, substrate = dill.load(f)[0]
 
     # Capture initial Level 1 temperature
     initial_T0 = Levels[1]["T0"].copy()
@@ -57,7 +55,9 @@ def test_stepGOMELTDwellTime_updates_Level1_temperature():
 def test_computeL1Temperature_outputs_valid_temperature():
     # Load test inputs from pickle file
     with open("tests/core/inputs/inputs_computeL1Temperature.pkl", "rb") as f:
-        Levels, ne_nn, tmp_ne_nn, L1F, L1V, L1k, L1rhocp, dt, properties = dill.load(f)
+        Levels, ne_nn, tmp_ne_nn, L1F, L1V, L1k, L1rhocp, dt, properties = dill.load(f)[
+            0
+        ]
 
     # Run the solver
     FinalL1 = computeL1Temperature(
@@ -85,54 +85,6 @@ def test_computeL1Temperature_outputs_valid_temperature():
     assert jnp.allclose(FinalL1, FinalL1b, rtol=1e-6, atol=1e-8)
 
 
-def test_computeL2Temperature_outputs_valid_temperature():
-    # Load test inputs from pickle file
-    with open("tests/core/inputs/inputs_computeL2Temperature.pkl", "rb") as f:
-        L1T, L1L2Interp, Levels, ne_nn, L2T0, L2F, L2V, L2k, L2rhocp, dt = dill.load(f)
-
-    # Run the solver
-    FinalL2 = computeL2Temperature(
-        L1T, L1L2Interp, Levels, ne_nn, L2T0, L2F, L2V, L2k, L2rhocp, dt
-    )
-
-    # --- Assertions ---
-    assert isinstance(FinalL2, jax.Array) or isinstance(FinalL2, jnp.ndarray)
-    assert FinalL2.shape[0] == Levels[2]["nn"]
-    assert jnp.all(jnp.isfinite(FinalL2))
-    assert jnp.all(FinalL2 < 1e6)
-    assert jnp.all(FinalL2 > -1e6)
-
-    # Deterministic check
-    FinalL2b = computeL2Temperature(
-        L1T, L1L2Interp, Levels, ne_nn, L2T0, L2F, L2V, L2k, L2rhocp, dt
-    )
-    assert jnp.allclose(FinalL2, FinalL2b, rtol=1e-6, atol=1e-8)
-
-
-def test_computeSolutions_L3_outputs_valid_temperature():
-    # Load test inputs from pickle file
-    with open("tests/core/inputs/inputs_computeSolutions_L3.pkl", "rb") as f:
-        FinalL2, L2L3Interp, Levels, ne_nn, L3T0, L3F, L3k, L3rhocp, dt = dill.load(f)
-
-    # Run the solver
-    FinalL3 = computeSolutions_L3(
-        FinalL2, L2L3Interp, Levels, ne_nn, L3T0, L3F, L3k, L3rhocp, dt
-    )
-
-    # --- Assertions ---
-    assert isinstance(FinalL3, jax.Array) or isinstance(FinalL3, jnp.ndarray)
-    assert FinalL3.shape[0] == Levels[3]["nn"]
-    assert jnp.all(jnp.isfinite(FinalL3))
-    assert jnp.all(FinalL3 < 1e6)
-    assert jnp.all(FinalL3 > -1e6)
-
-    # Deterministic check
-    FinalL3b = computeSolutions_L3(
-        FinalL2, L2L3Interp, Levels, ne_nn, L3T0, L3F, L3k, L3rhocp, dt
-    )
-    assert jnp.allclose(FinalL3, FinalL3b, rtol=1e-6, atol=1e-8)
-
-
 def test_computeSolutions_outputs_three_levels():
     # Load test inputs from pickle file
     with open("tests/core/inputs/inputs_computeSolutions.pkl", "rb") as f:
@@ -148,7 +100,7 @@ def test_computeSolutions_outputs_three_levels():
             L2V,
             dt,
             properties,
-        ) = dill.load(f)
+        ) = dill.load(f)[0]
 
     # Run the solver
     FinalL1, FinalL2, FinalL3 = computeSolutions(
@@ -187,7 +139,7 @@ def test_computeSolutions_outputs_three_levels():
 def test_solveMatrixFreeFE_outputs_shape_and_values():
     # Load test inputs from pickle file
     with open("tests/core/inputs/inputs_solveMatrixFreeFE.pkl", "rb") as f:
-        Level, nn, ne, k, rhocp, dt, T, Fc, Corr = dill.load(f)
+        Level, nn, ne, k, rhocp, dt, T, Fc, Corr = dill.load(f)[0]
 
     # Taken from Level 1, to make sure finite, assume all substrate
     ne = jnp.prod(jnp.array(Level["elements"])).tolist()

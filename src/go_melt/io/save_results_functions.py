@@ -1,6 +1,12 @@
 import numpy as np
 from pyevtk.hl import gridToVTK
 import dill
+from functools import wraps
+import os
+import copy
+
+RECORD_INPUTS_OUTPUTS = os.getenv("GO_MELT_RECORD_TEST_INPUTS_AND_OUTPUTS", "0") == "1"
+_recorded_flags = {}
 
 
 def saveResult(Level, save_str, record_lab, save_path, zoffset):
@@ -194,3 +200,31 @@ def save_object(obj, filename):
     """
     with open(filename, "wb") as outp:
         dill.dump(obj, outp, dill.HIGHEST_PROTOCOL)
+
+
+def record_first_call(name):
+    """
+    Decorator that records the inputs and outputs of the first call
+    to a function if RECORD_INPUTS_OUTPUTS is enabled.
+    Inputs are saved in tests/core/inputs/inputs_{name}.pkl
+    Outputs are saved in tests/core/outputs/outputs_{name}.pkl
+    """
+
+    def decorator(func):
+        @wraps(func)
+        def wrapper(*args, **kwargs):
+            if RECORD_INPUTS_OUTPUTS and name not in _recorded_flags:
+                # Save inputs
+                save_object((args, kwargs), f"tests/core/inputs/inputs_{name}.pkl")
+                # Call function and capture output
+                result = func(*args, **kwargs)
+                # Save output
+                save_object(result, f"tests/core/outputs/outputs_{name}.pkl")
+                _recorded_flags[name] = True
+                return result
+            # Normal path
+            return func(*args, **kwargs)
+
+        return wrapper
+
+    return decorator

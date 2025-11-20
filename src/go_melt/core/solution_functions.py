@@ -11,8 +11,10 @@ from .mesh_functions import getSampleCoords
 from .boundary_condition_functions import computeConvRadBC, assignBCs, assignBCsFine
 from go_melt.utils.helper_functions import convert2XYZ, static_set_in_array
 from .phase_state_functions import computeStateProperties
+from go_melt.io.save_results_functions import record_first_call
 
 
+# @record_first_call("stepGOMELTDwellTime")
 @partial(jax.jit, static_argnames=["ne_nn", "tmp_ne_nn", "substrate"])
 def stepGOMELTDwellTime(
     Levels: list[dict],
@@ -58,6 +60,7 @@ def stepGOMELTDwellTime(
     return Levels
 
 
+# @record_first_call("computeL1Temperature")
 @partial(jax.jit, static_argnames=["ne_nn", "tmp_ne_nn"])
 def computeL1Temperature(
     Levels: list[dict],
@@ -192,6 +195,7 @@ def computeSolutions_L3(
     return new_Level3_temperature
 
 
+# @record_first_call("computeSolutions")
 @partial(jax.jit, static_argnames=["ne_nn", "tmp_ne_nn"])
 def computeSolutions(
     Levels: list[dict],
@@ -275,6 +279,7 @@ def computeSolutions(
     return new_Level1_temperature, new_Level2_temperature, new_Level3_temperature
 
 
+# @record_first_call("solveMatrixFreeFE")
 @partial(jax.jit, static_argnames=["num_elems", "num_nodes"])
 def solveMatrixFreeFE(
     Level: dict,
