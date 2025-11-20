@@ -1,0 +1,128 @@
+{
+    "Level1": {
+        "elements": [
+            50,
+            20,
+            30
+        ],
+        "bounds": {
+            "x": [
+                0,
+                10
+            ],
+            "y": [
+                0,
+                4
+            ],
+            "z": [
+                -4,
+                2.0
+            ]
+        },
+        "conditions": {
+            "x": [
+                298.15,
+                298.15
+            ],
+            "y": [
+                298.15,
+                298.15
+            ],
+            "z": [
+                298.15,
+                298.15
+            ]
+        }
+    },
+    "Level2": {
+        "elements": [
+            100,
+            100,
+            10
+        ],
+        "bounds": {
+            "x": [
+                0,
+                4
+            ],
+            "y": [
+                0,
+                4
+            ],
+            "z": [
+                -0.4,
+                0.0
+            ]
+        }
+    },
+    "Level3": {
+        "elements": [
+            140,
+            140,
+            10
+        ],
+        "bounds": {
+            "x": [
+                0.6,
+                3.4
+            ],
+            "y": [
+                0.6,
+                3.4
+            ],
+            "z": [
+                -0.2,
+                0.0
+            ]
+        }
+    },
+    "properties": {
+        "thermal_conductivity_powder": { "value": 0.4, "unit": "W/(m*K)" },
+        "thermal_conductivity_bulk_a0": { "value": 4.23, "unit": "W/(m*K)" },
+        "thermal_conductivity_bulk_a1": { "value": 0.016, "unit": "W/(m*K^2)" },
+        "thermal_conductivity_fluid_a0": { "value": 29.0, "unit": "W/(m*K)" },
+        "heat_capacity_solid_a0": { "value": 383.1, "unit": "J/(kg*K)" },
+        "heat_capacity_solid_a1": { "value": 0.174, "unit": "J/(kg*K^2)" },
+        "heat_capacity_mushy": { "value": 3235.0, "unit": "J/(kg*K)" },
+        "heat_capacity_fluid": { "value": 769.0, "unit": "J/(kg*K)" },
+        "density": { "value": 8e-06, "unit": "kg/mm^3" },
+        "laser_radius": { "value": 0.1, "unit": "mm" },
+        "laser_depth": { "value": 0.1, "unit": "mm" },
+        "laser_power": { "value": 285.0, "unit": "W" },
+        "laser_absorptivity": 0.45,
+        "T_amb": { "value": 298.15, "unit": "K" },
+        "T_solidus": { "value": 1533, "unit": "K" },
+        "T_liquidus": { "value": 1609, "unit": "K" },
+        "T_boiling": { "value": 3038.0, "unit": "K" },
+        "h_conv": { "value": 1.5e-05, "unit": "W/(mm^2*K)" },
+        "emissivity": 0.3,
+        "evaporation_coefficient": 0.82,
+        "atomic_mass": { "value": 9.746e-26, "unit": "kg" },
+        "latent_heat_evap": { "value": 6457000.0, "unit": "J/kg" },
+        "molar_mass": { "value": 58.69, "unit": "g/mol" },
+        "layer_height": { "value": 0.04, "unit": "mm" }
+    },
+    "nonmesh": {
+        "timestep_L3": { "value": 1e-5, "unit": "s" },
+        "dwell_time": { "value": 1.0, "unit": "s" },
+        "wait_time": 200,
+        "output_files": 1,
+        "record_step": 24,
+        "Level1_record_step": 1,
+        "laser_velocity": { "value": 1000, "unit": "mm/s" },
+        "save_path": "./results/example_multilayer/",
+        "gcode": "./examples/gcodefiles/example_multilayer.gcode",
+        "toolpath": "./results/example_multilayer/toolpath.txt",
+        "layer_num": 0,
+        "subcycle_num_L2": 3,
+        "subcycle_num_L3": 4,
+        "info_T": 1,
+        "dwell_time_multiplier": 8,
+        "use_txt": 0,
+        "laser_center": [2.0, 2.0, 0.0, 0, 0, 0, 0],
+        "haste": 0,
+        "loop_GOMELT": 2,
+        "record_TAM": 1
+    }
+}
+
