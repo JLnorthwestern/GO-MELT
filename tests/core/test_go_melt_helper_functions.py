@@ -69,7 +69,7 @@ def test_single_step_execution_edge_cases(monkeypatch):
 
     # Assert: ensure fake_savez was called with expected args
     assert "filename" in called
-    assert "accum_time" in called["kwargs"]
+    assert "max_accum_time" in called["kwargs"]
     # filename should include layer_num suffix
     assert (
         str(simulation_state_result.Nonmesh["layer_num"] - 1).zfill(4)
@@ -239,6 +239,10 @@ def test_pre_time_loop_initialization_conditionals(monkeypatch):
     )
     monkeypatch.setattr(
         helper_functions, "saveResults", lambda levels, nonmesh, savenum: None
+    )
+    monkeypatch.setattr(helper_functions, "saveState", lambda _1, _2, _3, _4, _5: None)
+    monkeypatch.setattr(
+        helper_functions, "saveCustom", lambda _1, _2, _3, _4, _5, _6: None
     )
 
     # --- Act ---
