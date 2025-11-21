@@ -221,3 +221,106 @@ def computeConvRadBC(
     NeumannBC = jnp.bincount(aidx.reshape(-1), aT.reshape(-1), length=num_nodes)
 
     return flux_vector + NeumannBC
+
+
+def get_surface_faces(level, solid_indicator, number_elems):
+    def calcVal(i):
+        elem_x, elem_y, elem_z, idx = convert2XYZ(
+            i,
+            level["elements"][0],
+            level["elements"][1],
+            level["nodes"][0],
+            level["nodes"][1],
+        )
+        nodes_S1 = solid_indicator[idx]
+        full_element = 1 * (nodes_S1.sum() > 7)
+        faces_S1 = jnp.ones(6, dtype=full_element.dtype)
+
+        # Hexahedral (cube) element with nodes 0–7
+        #
+        #        7 -------- 6
+        #       /|         /|
+        #      / |        / |
+        #     4 -------- 5  |
+        #     |  |       |  |
+        #     |  3 ------|--2
+        #     | /        | /
+        #     |/         |/
+        #     0 -------- 1
+        #
+        # Node coordinates (unit cube, right-handed axes):
+        #   0: (0,0,0)  bottom-front-left
+        #   1: (1,0,0)  bottom-front-right
+        #   2: (1,1,0)  bottom-back-right
+        #   3: (0,1,0)  bottom-back-left
+        #   4: (0,0,1)  top-front-left
+        #   5: (1,0,1)  top-front-right
+        #   6: (1,1,1)  top-back-right
+        #   7: (0,1,1)  top-back-left
+        # Faces (node connectivity, normal out):
+        #   Face 0 (West):   0 - 4 - 7 - 3
+        #   Face 1 (East):   1 - 2 - 6 - 5
+        #   Face 2 (South):  0 - 1 - 5 - 4
+        #   Face 3 (North):  3 - 7 - 6 - 2
+        #   Face 4 (Bottom): 0 - 3 - 2 - 1
+        #   Face 5 (Top):    4 - 5 - 6 - 7
+        indices = jnp.array(
+            [
+                [0, 2, 4],
+                [1, 2, 4],
+                [1, 3, 4],
+                [0, 3, 4],
+                [0, 2, 5],
+                [1, 2, 5],
+                [1, 3, 5],
+                [0, 3, 5],
+            ]
+        )
+
+        faces_S1 = faces_S1.at[indices].multiply(nodes_S1[:, None])
+        faces_S1 = faces_S1.at[:].multiply(full_element)
+        return full_element, faces_S1, [elem_x, elem_y, elem_z]
+
+    vcalcVal = jax.vmap(calcVal)
+    S1ele, S1faces, elem_indices = vcalcVal(jnp.arange(number_elems))
+
+    # To get free faces
+    for _ in range(elem_indices[0].max()):
+        index1 = elem_indices[0] == _
+        index2 = elem_indices[0] == _ + 1
+        index3 = S1ele[index1] <= S1ele[index2]
+        S1faces = S1faces.at[index1, 1].set(1 - index3)
+
+    for _ in range(1, elem_indices[0].max() + 1):
+        index1 = elem_indices[0] == _
+        index2 = elem_indices[0] == _ - 1
+        index3 = S1ele[index1] <= S1ele[index2]
+        S1faces = S1faces.at[index1, 0].set(1 - index3)
+
+        # To get free faces
+    for _ in range(elem_indices[1].max()):
+        index1 = elem_indices[1] == _
+        index2 = elem_indices[1] == _ + 1
+        index3 = S1ele[index1] <= S1ele[index2]
+        S1faces = S1faces.at[index1, 3].set(1 - index3)
+
+    for _ in range(1, elem_indices[1].max() + 1):
+        index1 = elem_indices[1] == _
+        index2 = elem_indices[1] == _ - 1
+        index3 = S1ele[index1] <= S1ele[index2]
+        S1faces = S1faces.at[index1, 2].set(1 - index3)
+
+    for _ in range(elem_indices[2].max()):
+        index1 = elem_indices[2] == _
+        index2 = elem_indices[2] == _ + 1
+        index3 = S1ele[index1] <= S1ele[index2]
+        S1faces = S1faces.at[index1, 5].set(1 - index3)
+
+    for _ in range(1, elem_indices[2].max() + 1):
+        index1 = elem_indices[2] == _
+        index2 = elem_indices[2] == _ - 1
+        index3 = S1ele[index1] <= S1ele[index2]
+        S1faces = S1faces.at[index1, 4].set(1 - index3)
+
+    S1faces = S1faces.T
+    return S1ele, S1faces
