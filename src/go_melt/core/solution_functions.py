@@ -15,7 +15,9 @@ from go_melt.io.save_results_functions import record_first_call
 
 
 # @record_first_call("stepGOMELTDwellTime")
-@partial(jax.jit, static_argnames=["ne_nn", "tmp_ne_nn", "substrate"])
+@partial(
+    jax.jit, static_argnames=["ne_nn", "tmp_ne_nn", "substrate", "boundary_conditions"]
+)
 def stepGOMELTDwellTime(
     Levels: list[dict],
     tmp_ne_nn: tuple[int, int],
@@ -23,6 +25,7 @@ def stepGOMELTDwellTime(
     properties: dict,
     dt: float,
     substrate: tuple,
+    boundary_conditions: tuple,
 ) -> list[dict]:
     """
     Update Level 1 temperature field during laser dwell time in GO-MELT.
@@ -36,10 +39,25 @@ def stepGOMELTDwellTime(
     num_elements_L1 = tmp_ne_nn[0]
     inactive_start_idx = tmp_ne_nn[1]
 
+    # Dwell time does not apply a heat source
+    source_term = jnp.zeros_like(L1["T0"])
+
     # Compute boundary conditions (includes convection, radiation, evaporation)
-    source_term = computeConvRadBC(
-        L1, L1["T0"], num_elements_L1, num_nodes_L1, properties, flux_vector=0
-    )
+    for bc_index in range(6):
+        if (
+            boundary_conditions[1][0][bc_index] == 1
+            and boundary_conditions[1][1][bc_index] == 0
+        ):
+            source_term = computeConvRadBC(
+                L1,
+                L1["T0"],
+                num_elements_L1,
+                num_nodes_L1,
+                properties,
+                source_term,
+                jnp.array(boundary_conditions[1][4][bc_index]),
+                bc_index,
+            )
 
     # Compute temperature-dependent properties
     _, _, k, rhocp = computeStateProperties(

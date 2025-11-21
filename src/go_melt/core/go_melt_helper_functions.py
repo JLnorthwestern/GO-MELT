@@ -421,6 +421,7 @@ def single_step_execution(
                 state.Properties,
                 laser_pos[5],  # Time step size
                 state.substrate,
+                state.boundary_conditions,
             )
             state.dwell_time_count += laser_pos[5]
 
