@@ -517,35 +517,9 @@ def time_loop_post_execution(
     # -----------------------------------
     state.t_output += laser_all[:, 5].sum()
 
-    # Timing diagnostics
-    tend = time.time()
-    t_duration = tend - state.tstart
-    t_now = 1000 * (tend - t_loop)
-    t_avg = 1000 * t_duration / max(state.time_inc, 1)
-    execution_time_rem = (
-        ((tend - t_loop) / state.subcycle[2] * state.subcycle[-1])
-        * (state.total_t_inc - state.time_inc)
-        / 3600
-    )
-
-    # Print diagnostics
-    print(
-        "%d/%d, Real: %.6f s, Wall: %.2f s, Loop: %5.2f ms, Avg: %5.2f ms/dt"
-        % (
-            state.time_inc,
-            state.total_t_inc,
-            state.t_output,
-            t_duration,
-            t_now,
-            t_avg,
-        )
-    )
-    print(f"Estimated execution time remaining: {execution_time_rem:.4f} hours")
     _x, _y, _z, *_, _t, _p = laser_all[-1]
-    print(
-        f"Laser pos. (mm): X: {_x:.2f}, Y: {_y:.2f}, Z: {_z:.2f};"
-        f" Time step (s): {_t:.1e}; Power (W): {_p:.1f}"
-    )
+    print(f"Laser pos. (mm): X: {_x:.2f}, Y: {_y:.2f}, Z: {_z:.2f}")
+    print(f"Time step (s): {_t:.1e}; Power (W): {_p:.1f}")
 
     # Print temperature info if enabled
     if state.Nonmesh.get("info_T", False):
@@ -561,6 +535,23 @@ def time_loop_post_execution(
         state.record_inc = 0
         savenum = int(state.time_inc / state.Nonmesh["record_step"]) + 1
         saveResults(state.Levels, state.Nonmesh, savenum)
+
+    # Timing diagnostics
+    tend = time.time()
+    t_duration = tend - state.tstart
+    t_now = 1000 * (tend - t_loop)
+    t_avg = 1000 * t_duration / max(state.time_inc, 1)
+    execution_time_rem = (
+        ((tend - t_loop) / state.subcycle[2] * state.subcycle[-1])
+        * (state.total_t_inc - state.time_inc)
+        / 3600
+    )
+
+    # Print diagnostics
+    print("")
+    print(f"{state.time_inc}/{state.total_t_inc}, Real: {state.t_output:.6f} s")
+    print(f"Wall: {t_duration:.2f} s, Loop: {t_now:5.2f} ms, Avg: {t_avg:5.2f} ms/dt")
+    print(f"Estimated execution time remaining: {execution_time_rem:.4f} hours")
 
     return state
 
