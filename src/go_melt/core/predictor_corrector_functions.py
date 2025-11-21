@@ -252,7 +252,7 @@ def subcycleGOMELT(
     L1L2Eratio,
     L2L3Eratio,
     record_accum,
-    boundary_conditions,
+    boundary_conditions: tuple,
 ) -> tuple[list[dict], jnp.ndarray, jnp.ndarray, jnp.ndarray, jnp.ndarray, jnp.ndarray]:
     """
     Perform a full predictor-corrector subcycling step for the GO-MELT model.
@@ -288,6 +288,7 @@ def subcycleGOMELT(
             tmp_ne_nn,
             laser_position,
             laser_powers,
+            boundary_conditions,
         )
 
         # --- Subcycle Level 2 ---
@@ -310,6 +311,7 @@ def subcycleGOMELT(
             subcycle,
             properties,
             L1T,
+            boundary_conditions,
         )
         result_L2carry, history_L2carry = jax.lax.scan(
             lambda carry, sub: subcycleL2_Part1(carry, sub, ctx),
@@ -367,6 +369,7 @@ def subcycleGOMELT(
             properties,
             L1T,
             L3Tp_L2,
+            boundary_conditions,
         )
         final_L2carry, final_history_L2carry = jax.lax.scan(
             lambda carry, sub: subcycleL2_Part2(carry, sub, ctx),
@@ -426,7 +429,9 @@ def subcycleGOMELT(
 
 
 # @record_first_call("computeLevel1predictor")
-@partial(jax.jit, static_argnames=["ne_nn", "tmp_ne_nn", "substrate"])
+@partial(
+    jax.jit, static_argnames=["ne_nn", "tmp_ne_nn", "substrate", "boundary_conditions"]
+)
 def computeLevel1predictor(
     Levels,
     substrate,
@@ -436,6 +441,7 @@ def computeLevel1predictor(
     tmp_ne_nn,
     laser_position,
     laser_powers,
+    boundary_conditions: tuple,
 ) -> tuple:
     """
     Compute Level 1 temperature predictor and return all intermediate outputs
@@ -467,9 +473,21 @@ def computeLevel1predictor(
     L1F = computeLevelSource(
         Levels, ne_nn, laser_position, Shapes[1], properties, laser_powers
     )
-    L1F = computeConvRadBC(
-        Levels[1], Levels[1]["T0"], tmp_ne_nn[0], ne_nn[1][1], properties, L1F
-    )
+    for bc_index in range(6):
+        if (
+            boundary_conditions[1][0][bc_index] == 1
+            and boundary_conditions[1][1][bc_index] == 0
+        ):
+            L1F = computeConvRadBC(
+                Levels[1],
+                Levels[1]["T0"],
+                tmp_ne_nn[0],
+                ne_nn[1][1],
+                properties,
+                L1F,
+                jnp.array(boundary_conditions[1][4][bc_index]),
+                bc_index,
+            )
     L1V = computeL1TprimeTerms_Part1(Levels, ne_nn, L3k_L1, Shapes, L2k_L1)
 
     # --- Level 1 Temperature Predictor ---
@@ -489,7 +507,9 @@ def computeLevel1predictor(
     return (L3rhocp_L1, L2rhocp_L1, L1k, L1rhocp, L1F, L1V, L1T)
 
 
-@partial(jax.jit, static_argnames=["ne_nn", "substrate", "subcycle"])
+@partial(
+    jax.jit, static_argnames=["ne_nn", "substrate", "subcycle", "boundary_conditions"]
+)
 def compute_Level2_step(
     _L2sub: int,
     subcycle: tuple[int, int, int, float, float, float, int],
@@ -502,6 +522,7 @@ def compute_Level2_step(
     Shapes: list[list],
     laser_powers: jnp.ndarray,
     L1T: jnp.ndarray,
+    boundary_conditions: tuple,
 ):
     # --- Boundary interpolation weights ---
     alpha_L2 = (_L2sub + 1) / subcycle[3]
@@ -530,14 +551,21 @@ def compute_Level2_step(
         properties,
         laser_powers[Lidx],
     )
-    L2F = computeConvRadBC(
-        Levels[2],
-        _L2carry.T0,
-        ne_nn[0][2],
-        ne_nn[1][2],
-        properties,
-        L2F,
-    )
+    for bc_index in range(6):
+        if (
+            boundary_conditions[2][0][bc_index] == 1
+            and boundary_conditions[2][1][bc_index] == 0
+        ):
+            L2F = computeConvRadBC(
+                Levels[2],
+                _L2carry.T0,
+                ne_nn[0][2],
+                ne_nn[1][2],
+                properties,
+                L2F,
+                jnp.array(boundary_conditions[2][4][bc_index]),
+                bc_index,
+            )
 
     # --- Subgrid Correction ---
     L2V = computeL2TprimeTerms_Part1(Levels, ne_nn, _L2carry.L3Tprime0, L3k_L2, Shapes)
@@ -548,7 +576,9 @@ def compute_Level2_step(
     return (Lidx, L3rhocp_L2, L2S1, L2k, L2rhocp, L2F, L2V, _BC)
 
 
-@partial(jax.jit, static_argnames=["ne_nn", "substrate", "subcycle"])
+@partial(
+    jax.jit, static_argnames=["ne_nn", "substrate", "subcycle", "boundary_conditions"]
+)
 def compute_Level3_step(
     _L3carry,
     properties: dict,
@@ -563,6 +593,7 @@ def compute_Level3_step(
     L2T: jnp.ndarray,
     _L2carry: L2Carry_Predictor,
     LInterp: list[list],
+    boundary_conditions: tuple,
 ):
     # --- Material Properties ---
     L3S1, L3S2, L3k, L3rhocp = computeStateProperties(
@@ -576,9 +607,21 @@ def compute_Level3_step(
     L3F = computeSourcesL3(
         Levels[3], laser_position[LLidx, :], ne_nn, properties, laser_powers[LLidx]
     )
-    L3F = computeConvRadBC(
-        Levels[3], _L3carry[0], ne_nn[0][3], ne_nn[1][3], properties, L3F
-    )
+    for bc_index in range(6):
+        if (
+            boundary_conditions[3][0][bc_index] == 1
+            and boundary_conditions[3][1][bc_index] == 0
+        ):
+            L3F = computeConvRadBC(
+                Levels[3],
+                _L3carry[0],
+                ne_nn[0][3],
+                ne_nn[1][3],
+                properties,
+                L3F,
+                jnp.array(boundary_conditions[3][4][bc_index]),
+                bc_index,
+            )
 
     # --- Boundary condition interpolation ---
     alpha_L3 = (_L3sub + 1) / subcycle[4]
@@ -616,6 +659,7 @@ def subcycleL2_Part1(
         subcycle,
         properties,
         L1T,
+        boundary_conditions,
     ) = ctx
 
     (Lidx, L3rhocp_L2, L2S1, L2k, L2rhocp, L2F, L2V, _BC) = compute_Level2_step(
@@ -630,6 +674,7 @@ def subcycleL2_Part1(
         Shapes,
         laser_powers,
         L1T,
+        boundary_conditions,
     )
 
     # --- Temperature Solve ---
@@ -664,6 +709,7 @@ def subcycleL2_Part1(
             L2T,
             _L2carry,
             LInterp,
+            boundary_conditions,
         )
 
         return L3Carry_Predictor(L3T, L3S1), L3Carry_Predictor(L3T, L3S1)
@@ -698,6 +744,7 @@ def subcycleL2_Part2(
         properties,
         L1T,
         L3Tp_L2,
+        boundary_conditions,
     ) = ctx
     (Lidx, L3rhocp_L2, L2S1, L2k, L2rhocp, L2F, L2V, _BC) = compute_Level2_step(
         _L2sub,
@@ -711,6 +758,7 @@ def subcycleL2_Part2(
         Shapes,
         laser_powers,
         L1T,
+        boundary_conditions,
     )
 
     # Add time derivative correction from Level 3 to Level 2
@@ -757,6 +805,7 @@ def subcycleL2_Part2(
             L2T,
             _L2carry,
             LInterp,
+            boundary_conditions,
         )
 
         return (

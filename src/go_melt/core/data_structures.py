@@ -63,6 +63,7 @@ class SubcycleContext_Predictor(NamedTuple):
     subcycle: tuple[int, int, int, float, float, float]
     properties: dict
     L1T: jnp.ndarray
+    boundary_conditions: tuple
 
 
 class SubcycleContext_Corrector(NamedTuple):
@@ -77,6 +78,7 @@ class SubcycleContext_Corrector(NamedTuple):
     properties: dict
     L1T: jnp.ndarray
     L3Tp_L2: jnp.ndarray
+    boundary_conditions: tuple
 
 
 @dataclass
