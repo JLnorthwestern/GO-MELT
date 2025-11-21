@@ -22,18 +22,22 @@
         "conditions": {
             "west": {
                 "type": "Dirichlet",
+                "function": "Constant",
                 "value": 298.15
             },
             "east": {
                 "type": "Dirichlet",
+                "function": "Constant",
                 "value": 298.15
             },
             "north": {
                 "type": "Dirichlet",
+                "function": "Constant",
                 "value": 298.15
             },
             "south": {
                 "type": "Dirichlet",
+                "function": "Constant",
                 "value": 298.15
             },
             "top": {
@@ -41,8 +45,9 @@
                 "function": "Surface"
             },
             "bottom": {
-                "type": "Neumann",
-                "function": "Convection"
+                "type": "Dirichlet",
+                "function": "Constant",
+                "value": 298.15
             }
         }
     },
@@ -65,6 +70,32 @@
                 -0.4,
                 0.0
             ]
+        },
+        "conditions": {
+            "west": {
+                "type": "Dirichlet",
+                "function": "Interpolate"
+            },
+            "east": {
+                "type": "Dirichlet",
+                "function": "Interpolate"
+            },
+            "north": {
+                "type": "Dirichlet",
+                "function": "Interpolate"
+            },
+            "south": {
+                "type": "Dirichlet",
+                "function": "Interpolate"
+            },
+            "top": {
+                "type": "Neumann",
+                "function": "Surface"
+            },
+            "bottom": {
+                "type": "Dirichlet",
+                "function": "Interpolate"
+            }
         }
     },
     "Level3": {
@@ -86,6 +117,32 @@
                 -0.2,
                 0.0
             ]
+        },
+        "conditions": {
+            "west": {
+                "type": "Dirichlet",
+                "function": "Interpolate"
+            },
+            "east": {
+                "type": "Dirichlet",
+                "function": "Interpolate"
+            },
+            "north": {
+                "type": "Dirichlet",
+                "function": "Interpolate"
+            },
+            "south": {
+                "type": "Dirichlet",
+                "function": "Interpolate"
+            },
+            "top": {
+                "type": "Neumann",
+                "function": "Surface"
+            },
+            "bottom": {
+                "type": "Dirichlet",
+                "function": "Interpolate"
+            }
         }
     },
     "properties": {

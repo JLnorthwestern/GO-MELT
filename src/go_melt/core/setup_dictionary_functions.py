@@ -37,8 +37,7 @@ def SetupLevels(solver_input: dict, properties: dict) -> list[dict]:
         level.ne = level.elements[0] * level.elements[1] * level.elements[2]
         level.nn = level.nodes[0] * level.nodes[1] * level.nodes[2]
         level = getBCindices(level)
-        if level is Level1:
-            level = convert_boundary_types(level)
+        level = convert_boundary_types(level)
         level.node_coords, level.connect = createMesh3D(
             (level.bounds.x[0], level.bounds.x[1], level.nodes[0]),
             (level.bounds.y[0], level.bounds.y[1], level.nodes[1]),
@@ -474,10 +473,16 @@ def convert_boundary_types(level: dict) -> dict:
         bc = getattr(level.conditions, face)
         if bc.type == "Dirichlet":
             bc.type = 0
+            if bc.function == "Constant":
+                bc.function = 0
+            elif bc.function == "Interpolate":
+                bc.function = 1
         elif bc.type == "Neumann":
             bc.type = 1
             if bc.function == "Surface":
                 bc.function = 0
             elif bc.function == "Convection":
                 bc.function = 1
+            elif bc.function == "Adiabatic":
+                bc.function = 2
     return level

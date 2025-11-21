@@ -9,36 +9,10 @@ from go_melt.utils.gaussian_quadrature_functions import (
 from go_melt.utils.helper_functions import convert2XYZ
 
 
-class Boundary:
-    def __init__(self):
-        self.type = None
-        self.value = None
-        self.function = None
-        self.indices = None
-
-
-def ensure_conditions(level):
-    """
-    Make sure level.conditions exists and has all boundary slots.
-    """
-    if not hasattr(level, "conditions") or level.conditions is None:
-        # create empty boundary objects for all faces
-        level.conditions = type("Conditions", (), {})()
-        level.conditions.west = Boundary()
-        level.conditions.east = Boundary()
-        level.conditions.south = Boundary()
-        level.conditions.north = Boundary()
-        level.conditions.bottom = Boundary()
-        level.conditions.top = Boundary()
-    return level
-
-
 def getBCindices(level: obj) -> list[jnp.ndarray]:
     """
     Compute boundary condition indices for a structured 3D mesh.
     """
-    ensure_conditions(level)
-
     nodes_x, nodes_y, nodes_z = level.nodes[0], level.nodes[1], level.nodes[2]
     total_nodes = level.nn
 
