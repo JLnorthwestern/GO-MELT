@@ -486,3 +486,45 @@ def convert_boundary_types(level: dict) -> dict:
             elif bc.function == "Adiabatic":
                 bc.function = 2
     return level
+
+
+def SetupStaticBoundaryConditions(Levels: list[dict]) -> tuple:
+    boundary_conditions = [()]
+    for level in range(1, len(Levels)):
+        level_types = []
+        level_functions = []
+        level_value = []
+        level_global_indices = []
+        level_local_indices = []
+        for face in ["west", "east", "south", "north", "bottom", "top"]:
+            level_types.append(Levels[level]["conditions"][face]["type"])
+            level_functions.append(Levels[level]["conditions"][face]["function"])
+            if "value" in Levels[level]["conditions"][face].keys():
+                level_value.append(Levels[level]["conditions"][face]["value"])
+            else:
+                level_value.append(jnp.nan)
+            level_global_indices.append(
+                tuple(Levels[level]["conditions"][face]["indices"].tolist())
+            )
+            if face == "west":
+                level_local_indices.append((0, 4, 7, 3))
+            elif face == "east":
+                level_local_indices.append((1, 2, 6, 5))
+            elif face == "south":
+                level_local_indices.append((0, 1, 5, 4))
+            elif face == "north":
+                level_local_indices.append((3, 7, 6, 2))
+            elif face == "bottom":
+                level_local_indices.append((0, 3, 2, 1))
+            elif face == "top":
+                level_local_indices.append((4, 5, 6, 7))
+        boundary_conditions.append(
+            (
+                tuple(level_types),
+                tuple(level_functions),
+                tuple(level_value),
+                tuple(level_global_indices),
+                tuple(level_local_indices),
+            )
+        )
+    return tuple(boundary_conditions)

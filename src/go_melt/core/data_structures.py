@@ -91,6 +91,7 @@ class SimulationState:
     substrate: tuple
     tmp_ne_nn: tuple
     subcycle: tuple
+    boundary_conditions: tuple
 
     # Unchanging variables
     laser_start: np.ndarray

@@ -46,8 +46,8 @@ def computeQuad2dFemShapeFunctions_jax(coords):
     dNdeta = (1 / 4) * eta_i[None, :] * _ksi
 
     # Compute Jacobian components (diagonal for structured mesh)
-    dxdksi = jnp.matmul(dNdksi, coords[4:, 0])
-    dydeta = jnp.matmul(dNdeta, coords[4:, 1])
+    dxdksi = jnp.matmul(dNdksi, coords[:, 0])
+    dydeta = jnp.matmul(dNdeta, coords[:, 1])
 
     # Manually construct Jacobian and its inverse
     J = jnp.array(

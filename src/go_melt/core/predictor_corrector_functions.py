@@ -46,6 +46,7 @@ from go_melt.io.save_results_functions import record_first_call
         "substrate",
         "record_accum",
         "LPBF_indicator",
+        "boundary_conditions",
     ],
 )
 def stepGOMELT(
@@ -63,6 +64,7 @@ def stepGOMELT(
     accum_time: jnp.ndarray,
     record_accum: int,
     LPBF_indicator: bool,
+    boundary_conditions: tuple,
 ) -> tuple[dict, jnp.ndarray, jnp.ndarray]:
     """
     Perform a full explicit time step for the multilevel GOMELT simulation.
@@ -101,9 +103,50 @@ def stepGOMELT(
     Fc, Fm, Ff = computeSources(
         L3, laser_position, Shapes, ne_nn, properties, laser_power
     )
-    Fc = computeConvRadBC(L1, L1["T0"], ne_nn[0][1], ne_nn[1][1], properties, Fc)
-    Fm = computeConvRadBC(L2, L2["T0"], ne_nn[0][2], ne_nn[1][2], properties, Fm)
-    Ff = computeConvRadBC(L3, L3["T0"], ne_nn[0][3], ne_nn[1][3], properties, Ff)
+
+    for bc_index in range(6):
+        if (
+            boundary_conditions[1][0][bc_index] == 1
+            and boundary_conditions[1][1][bc_index] == 0
+        ):
+            Fc = computeConvRadBC(
+                L1,
+                L1["T0"],
+                ne_nn[0][1],
+                ne_nn[1][1],
+                properties,
+                Fc,
+                jnp.array(boundary_conditions[1][4][bc_index]),
+                bc_index,
+            )
+        if (
+            boundary_conditions[2][0][bc_index] == 1
+            and boundary_conditions[2][1][bc_index] == 0
+        ):
+            Fm = computeConvRadBC(
+                L2,
+                L2["T0"],
+                ne_nn[0][2],
+                ne_nn[1][2],
+                properties,
+                Fm,
+                jnp.array(boundary_conditions[2][4][bc_index]),
+                bc_index,
+            )
+        if (
+            boundary_conditions[3][0][bc_index] == 1
+            and boundary_conditions[3][1][bc_index] == 0
+        ):
+            Ff = computeConvRadBC(
+                L3,
+                L3["T0"],
+                ne_nn[0][3],
+                ne_nn[1][3],
+                properties,
+                Ff,
+                jnp.array(boundary_conditions[3][4][bc_index]),
+                bc_index,
+            )
     F = [0, Fc, Fm, Ff]  # Source terms for Levels 1–3
 
     # --- Predictor step ---
@@ -184,7 +227,14 @@ def stepGOMELT(
 # @record_first_call("subcycleGOMELT")
 @partial(
     jax.jit,
-    static_argnames=["ne_nn", "tmp_ne_nn", "substrate", "subcycle", "record_accum"],
+    static_argnames=[
+        "ne_nn",
+        "tmp_ne_nn",
+        "substrate",
+        "subcycle",
+        "record_accum",
+        "boundary_conditions",
+    ],
 )
 def subcycleGOMELT(
     Levels: list[dict],
@@ -202,6 +252,7 @@ def subcycleGOMELT(
     L1L2Eratio,
     L2L3Eratio,
     record_accum,
+    boundary_conditions,
 ) -> tuple[list[dict], jnp.ndarray, jnp.ndarray, jnp.ndarray, jnp.ndarray, jnp.ndarray]:
     """
     Perform a full predictor-corrector subcycling step for the GO-MELT model.

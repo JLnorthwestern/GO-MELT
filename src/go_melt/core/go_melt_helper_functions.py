@@ -29,6 +29,7 @@ from .setup_dictionary_functions import (
     SetupProperties,
     SetupStaticNodesAndElements,
     SetupStaticSubcycle,
+    SetupStaticBoundaryConditions,
     calcStaticTmpNodesAndElements,
 )
 from .mesh_functions import getSubstrateNodes
@@ -68,7 +69,7 @@ def pre_time_loop_initialization(input_file: Path) -> SimulationState:
     # -------------------------------
     ne_nn = SetupStaticNodesAndElements(Levels)
     subcycle = SetupStaticSubcycle(Nonmesh)
-
+    boundary_conditions = SetupStaticBoundaryConditions(Levels)
     # -------------------------------
     # Mesh Ratios for Movement Logic
     # -------------------------------
@@ -178,6 +179,7 @@ def pre_time_loop_initialization(input_file: Path) -> SimulationState:
         ongoing_simulation=True,
         new_dwell_flag=True,
         force_move=True,
+        boundary_conditions=boundary_conditions,
     )
 
     return state
@@ -398,6 +400,7 @@ def single_step_execution(
                 state.accum_time,
                 state.Nonmesh["record_TAM"],
                 state.Nonmesh["LPBF"],
+                state.boundary_conditions,
             )
             state.force_move = True
             state.new_dwell_flag = True
@@ -493,6 +496,7 @@ def multi_step_execution(
         state.L1L2Eratio,
         state.L2L3Eratio,
         state.Nonmesh["record_TAM"],
+        state.boundary_conditions,
     )
     gc.collect()
 

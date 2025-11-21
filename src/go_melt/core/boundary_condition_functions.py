@@ -108,7 +108,7 @@ def assignBCsFine(RHS: jnp.ndarray, TfAll: jnp.ndarray, level: dict) -> jnp.ndar
     return _RHS
 
 
-@partial(jax.jit, static_argnames=["num_elems", "num_nodes"])
+@partial(jax.jit, static_argnames=["num_elems", "num_nodes", "bc_index"])
 def computeConvRadBC(
     Level: dict,
     temperature: jnp.ndarray,
@@ -116,6 +116,8 @@ def computeConvRadBC(
     num_nodes: int,
     properties: dict,
     flux_vector: jnp.ndarray,
+    local_indices: jnp.ndarray,
+    bc_index: int,
 ) -> jnp.ndarray:
     """
     Compute Neumann boundary conditions on the top surface due to:
@@ -153,9 +155,19 @@ def computeConvRadBC(
     coords = jnp.stack([x[cx[0, :]], y[cy[0, :]]], axis=1)
 
     # Precompute shape functions and quadrature weights
+    coords = jnp.array([[0.0, 1.0, 1.0, 0.0], [0.0, 0.0, 1.0, 1.0]]).T
+    if bc_index in [0, 1]:
+        coords = coords.at[:, 0].multiply(Level["h"][1])
+        coords = coords.at[:, 1].multiply(Level["h"][2])
+    elif bc_index in [2, 3]:
+        coords = coords.at[:, 0].multiply(Level["h"][0])
+        coords = coords.at[:, 1].multiply(Level["h"][2])
+    else:
+        coords = coords.at[:, 0].multiply(Level["h"][0])
+        coords = coords.at[:, 1].multiply(Level["h"][1])
     N, _, wq = computeQuad2dFemShapeFunctions_jax(coords)
 
-    top_faces = Level["S1faces"][-1]
+    open_surfaces = Level["S1faces"][bc_index]
 
     def calcCR(i):
         """
@@ -164,7 +176,7 @@ def computeConvRadBC(
         _, _, _, idx = convert2XYZ(i, ne_x, ne_y, nn_x, nn_y)
 
         # Interpolate nodal temperatures to quadrature points
-        Tq = jnp.matmul(N, temperature[idx[4:]])
+        Tq = jnp.matmul(N, temperature[idx[local_indices]])
         Tq = jnp.minimum(Tq, T_boiling + 1000)
 
         invT = 1.0 / Tq
@@ -187,7 +199,10 @@ def computeConvRadBC(
         q_flux *= 1e-6
 
         # Integrate over the element
-        return jnp.matmul(N.T, q_flux * wq.reshape(-1)) * top_faces[i], idx[4:]
+        return (
+            jnp.matmul(N.T, q_flux * wq.reshape(-1)) * open_surfaces[i],
+            idx[local_indices],
+        )
 
     aT, aidx = jax.vmap(calcCR)(jnp.arange(num_elems))
     NeumannBC = jnp.bincount(aidx.reshape(-1), aT.reshape(-1), length=num_nodes)
