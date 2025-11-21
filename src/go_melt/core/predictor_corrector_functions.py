@@ -38,7 +38,16 @@ from go_melt.io.save_results_functions import record_first_call
 
 
 # @record_first_call("stepGOMELT")
-@partial(jax.jit, static_argnames=["ne_nn", "tmp_ne_nn", "substrate", "record_accum"])
+@partial(
+    jax.jit,
+    static_argnames=[
+        "ne_nn",
+        "tmp_ne_nn",
+        "substrate",
+        "record_accum",
+        "LPBF_indicator",
+    ],
+)
 def stepGOMELT(
     Levels: list[dict],
     ne_nn: tuple[int],
@@ -53,6 +62,7 @@ def stepGOMELT(
     max_accum_time: jnp.ndarray,
     accum_time: jnp.ndarray,
     record_accum: int,
+    LPBF_indicator: bool,
 ) -> tuple[dict, jnp.ndarray, jnp.ndarray]:
     """
     Perform a full explicit time step for the multilevel GOMELT simulation.
@@ -70,10 +80,18 @@ def stepGOMELT(
 
     # Update material state and thermal properties
     Levels, Lk, Lrhocp = updateStateProperties(Levels, properties, substrate)
+    if LPBF_indicator:
+        Levels[1]["active"] = Levels[1]["active"].at[: tmp_ne_nn[1]].set(True)
+        Levels[2]["active"] = Levels[2]["active"].at[:].set(True)
+        Levels[3]["active"] = Levels[3]["active"].at[:].set(True)
+    else:
+        Levels[1]["active"] = Levels[1]["S1"] == 1
+        Levels[2]["active"] = Levels[2]["S1"] == 1
+        Levels[3]["active"] = Levels[3]["S1"] == 1
 
     for _ in range(1, 4):
         Levels[_]["S1ele"], Levels[_]["S1faces"] = get_surface_faces(
-            Levels[_], Levels[_]["S1"], ne_nn[0][_], ne_nn[2][_]
+            Levels[_], Levels[_]["active"], ne_nn[0][_], ne_nn[2][_]
         )
 
     # Unpack levels for clarity
@@ -83,7 +101,7 @@ def stepGOMELT(
     Fc, Fm, Ff = computeSources(
         L3, laser_position, Shapes, ne_nn, properties, laser_power
     )
-    Fc = computeConvRadBC(L1, L1["T0"], tmp_ne_nn[0], ne_nn[1][1], properties, Fc)
+    Fc = computeConvRadBC(L1, L1["T0"], ne_nn[0][1], ne_nn[1][1], properties, Fc)
     Fm = computeConvRadBC(L2, L2["T0"], ne_nn[0][2], ne_nn[1][2], properties, Fm)
     Ff = computeConvRadBC(L3, L3["T0"], ne_nn[0][3], ne_nn[1][3], properties, Ff)
     F = [0, Fc, Fm, Ff]  # Source terms for Levels 1–3

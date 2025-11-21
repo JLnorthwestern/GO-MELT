@@ -173,7 +173,6 @@ def computeConvRadBC(
     cx, cy = Level["connect"][0], Level["connect"][1]
     ne_x = jnp.size(cx, 0)
     ne_y = jnp.size(cy, 0)
-    top_ne = num_elems - ne_x * ne_y
     nn_x, nn_y = ne_x + 1, ne_y + 1
 
     # Coordinates of a representative top-surface element
@@ -181,6 +180,8 @@ def computeConvRadBC(
 
     # Precompute shape functions and quadrature weights
     N, _, wq = computeQuad2dFemShapeFunctions_jax(coords)
+
+    top_faces = Level["S1faces"][-1]
 
     def calcCR(i):
         """
@@ -212,12 +213,9 @@ def computeConvRadBC(
         q_flux *= 1e-6
 
         # Integrate over the element
-        return jnp.matmul(N.T, q_flux * wq.reshape(-1)), idx[4:]
+        return jnp.matmul(N.T, q_flux * wq.reshape(-1)) * top_faces[i], idx[4:]
 
-    # Vectorized computation over all top-surface elements
-    aT, aidx = jax.vmap(calcCR)(jnp.arange(top_ne, num_elems))
-
-    # Assemble into global force vector
+    aT, aidx = jax.vmap(calcCR)(jnp.arange(num_elems))
     NeumannBC = jnp.bincount(aidx.reshape(-1), aT.reshape(-1), length=num_nodes)
 
     return flux_vector + NeumannBC

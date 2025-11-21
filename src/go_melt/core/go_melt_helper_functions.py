@@ -397,6 +397,7 @@ def single_step_execution(
                 state.max_accum_time,
                 state.accum_time,
                 state.Nonmesh["record_TAM"],
+                state.Nonmesh["LPBF"],
             )
             state.force_move = True
             state.new_dwell_flag = True

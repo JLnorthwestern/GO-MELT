@@ -48,6 +48,7 @@ def SetupLevels(solver_input: dict, properties: dict) -> list[dict]:
         level.T0 = properties["T_amb"] * jnp.ones(level.nn)
         level.S1 = jnp.zeros(level.nn)
         level.S2 = jnp.zeros(level.nn, dtype=bool)
+        level.active = jnp.zeros(level.nn, dtype=bool)
         level.k = properties["k_powder"] * jnp.ones(level.nn)
         level.rhocp = (
             properties["cp_solid_coeff_a0"] * properties["rho"] * jnp.ones(level.nn)
@@ -327,6 +328,9 @@ def SetupNonmesh(nonmesh_input: dict) -> dict:
 
     # Recording data for Time-Above-Melting (TAM)
     Nonmesh.record_TAM = nonmesh_input.get("record_TAM", 0)
+
+    # If running for LPBF or not (only LPBF supported)
+    Nonmesh.LPBF = nonmesh_input.get("LPBF", True)
 
     # Create output directory if it doesn't exist
     if not os.path.exists(Nonmesh.save_path):
