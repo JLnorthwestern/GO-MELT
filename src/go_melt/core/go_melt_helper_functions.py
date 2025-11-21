@@ -176,6 +176,8 @@ def pre_time_loop_initialization(input_file: Path) -> SimulationState:
         layer_check=layer_check,
         level_names=level_names,
         ongoing_simulation=True,
+        new_dwell_flag=True,
+        force_move=True,
     )
 
     return state
@@ -287,7 +289,7 @@ def single_step_execution(
 
             # Update layer tracking and flags
             state.laser_prev_z = laser_pos[2]
-            force_move = True
+            state.force_move = True
             state.wait_inc = 0
             move_vert = True
 
@@ -352,13 +354,11 @@ def single_step_execution(
                     )
                     state.max_accum_time = state.max_accum_time.at[_0nn2:].set(0)
 
-        force_move = True
-
         # -----------------------------------
         # Move Meshes if Needed
         # -----------------------------------
-        if force_move:
-            force_move = False
+        if state.force_move:
+            state.force_move = False
             (state.Levels, Shapes, state.LInterp, state.move_hist) = moveEverything(
                 laser_pos,
                 state.laser_start,
@@ -398,18 +398,17 @@ def single_step_execution(
                 state.accum_time,
                 state.Nonmesh["record_TAM"],
             )
-
+            state.force_move = True
+            state.new_dwell_flag = True
         else:
             # Dwell time: only update Level 1
-            if (
-                not (state.Levels[2]["Tprime0"] == 0).all()
-                or not (state.Levels[3]["Tprime0"] == 0).all()
-            ):
+            if state.new_dwell_flag:
                 state.dwell_time_count = (
                     state.Nonmesh["wait_time"] * state.Nonmesh["timestep_L3"]
                 )
                 state.Levels[2]["Tprime0"] = state.Levels[2]["Tprime0"].at[:].set(0)
                 state.Levels[3]["Tprime0"] = state.Levels[3]["Tprime0"].at[:].set(0)
+                state.new_dwell_flag = False
 
             state.Levels = stepGOMELTDwellTime(
                 state.Levels,
@@ -420,7 +419,6 @@ def single_step_execution(
                 state.substrate,
             )
             state.dwell_time_count += laser_pos[5]
-            print(f"Dwell Time {state.dwell_time_count:.6f} s")
 
         # -----------------------------------
         # Increment Time and Record Counters
@@ -498,6 +496,7 @@ def multi_step_execution(
     gc.collect()
 
     # Update counters and total elapsed time
+    state.new_dwell_flag = True
     state.time_inc += state.t_add
     state.record_inc += state.t_add
     return state
@@ -512,21 +511,11 @@ def time_loop_post_execution(
     """
     Helper function to handle output, monitoring, and diagnostics during simulation.
     """
-
+    print("------------------------------------------------------------")
     # -----------------------------------
     # Output accumulation
     # -----------------------------------
     state.t_output += laser_all[:, 5].sum()
-
-    # Save results if record step reached
-    if state.record_inc >= state.Nonmesh["record_step"]:
-        state.record_inc = 0
-        savenum = int(state.time_inc / state.Nonmesh["record_step"]) + 1
-        saveResults(state.Levels, state.Nonmesh, savenum)
-
-    # Print temperature info if enabled
-    if state.Nonmesh.get("info_T", False):
-        printLevelMaxMin(state.Levels, state.level_names)
 
     # Timing diagnostics
     tend = time.time()
@@ -551,11 +540,27 @@ def time_loop_post_execution(
             t_avg,
         )
     )
-    print(
-        "Laser location: X: %.2f, Y: %.2f, Z: %.2f"
-        % (laser_all[-1][0], laser_all[-1][1], laser_all[-1][2])
-    )
     print(f"Estimated execution time remaining: {execution_time_rem:.4f} hours")
+    _x, _y, _z, *_, _t, _p = laser_all[-1]
+    print(
+        f"Laser pos. (mm): X: {_x:.2f}, Y: {_y:.2f}, Z: {_z:.2f};"
+        f" Time step (s): {_t:.1e}; Power (W): {_p:.1f}"
+    )
+
+    # Print temperature info if enabled
+    if state.Nonmesh.get("info_T", False):
+        if state.new_dwell_flag:
+            # If not dwell time, print all levels
+            printLevelMaxMin(state.Levels, state.level_names)
+        else:
+            # If in dwell time, only print part-scale
+            printLevelMaxMin(state.Levels[:2], state.level_names[:2])
+
+    # Save results if record step reached
+    if state.record_inc >= state.Nonmesh["record_step"] and state.new_dwell_flag:
+        state.record_inc = 0
+        savenum = int(state.time_inc / state.Nonmesh["record_step"]) + 1
+        saveResults(state.Levels, state.Nonmesh, savenum)
 
     return state
 

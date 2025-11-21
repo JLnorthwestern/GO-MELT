@@ -116,6 +116,8 @@ class SimulationState:
     tstart: float
     t_output: float
     ongoing_simulation: bool
+    new_dwell_flag: bool
+    force_move: bool
 
     # Paths
     checkpoint_path: Path
