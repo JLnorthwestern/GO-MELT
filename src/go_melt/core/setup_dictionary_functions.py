@@ -352,6 +352,12 @@ def SetupStaticNodesAndElements(Levels: list[dict]) -> tuple[tuple[int]]:
             Levels[2]["nn"].tolist(),
             Levels[3]["nn"].tolist(),
         ),
+        (
+            tuple([Levels[0]["elements"][_].tolist() for _ in range(3)]),
+            tuple([Levels[1]["elements"][_].tolist() for _ in range(3)]),
+            tuple([Levels[2]["elements"][_].tolist() for _ in range(3)]),
+            tuple([Levels[3]["elements"][_].tolist() for _ in range(3)]),
+        ),
     )
 
 

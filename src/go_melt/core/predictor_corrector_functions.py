@@ -7,6 +7,7 @@ from go_melt.utils.helper_functions import getOverlapRegion
 from .phase_state_functions import updateStateProperties, computeStateProperties
 from .boundary_condition_functions import (
     computeConvRadBC,
+    get_surface_faces,
 )
 from .move_mesh_functions import moveEverything
 from .solution_functions import (
@@ -69,6 +70,11 @@ def stepGOMELT(
 
     # Update material state and thermal properties
     Levels, Lk, Lrhocp = updateStateProperties(Levels, properties, substrate)
+
+    for _ in range(1, 4):
+        Levels[_]["S1ele"], Levels[_]["S1faces"] = get_surface_faces(
+            Levels[_], Levels[_]["S1"], ne_nn[0][_], ne_nn[2][_]
+        )
 
     # Unpack levels for clarity
     L1, L2, L3 = Levels[1], Levels[2], Levels[3]
@@ -501,7 +507,9 @@ def compute_Level3_step(
     L3F = computeSourcesL3(
         Levels[3], laser_position[LLidx, :], ne_nn, properties, laser_powers[LLidx]
     )
-    L3F = computeConvRadBC(Levels[3], _L3carry[0], ne_nn[0][3], ne_nn[1][3], properties, L3F)
+    L3F = computeConvRadBC(
+        Levels[3], _L3carry[0], ne_nn[0][3], ne_nn[1][3], properties, L3F
+    )
 
     # --- Boundary condition interpolation ---
     alpha_L3 = (_L3sub + 1) / subcycle[4]
