@@ -103,6 +103,7 @@ class SimulationState:
     tool_path_file: io.TextIOWrapper
     layer_check: int
     level_names: list[str]
+    temperature_probe_list: list[list[jnp.ndarray]]
 
     # Changing variables
     laser_prev_z: float

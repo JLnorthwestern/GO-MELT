@@ -174,7 +174,7 @@
     "nonmesh": {
         "timestep_L3": { "value": 1e-5, "unit": "s" },
         "dwell_time": { "value": 1.0, "unit": "s" },
-        "wait_time": 200,
+        "wait_time": 1000,
         "output_files": 1,
         "record_step": 25,
         "Level1_record_step": 1,
@@ -191,7 +191,8 @@
         "laser_center": [2.0, 2.0, 0.0, 0, 0, 0, 0],
         "haste": 0,
         "loop_GOMELT": 1,
-        "record_TAM": 0
+        "record_TAM": 0,
+        "probe_locations": [[2.0, 2.0, 0.04], [8.0, 2.0, 0.04]]
     }
 }
 

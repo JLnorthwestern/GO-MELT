@@ -331,6 +331,9 @@ def SetupNonmesh(nonmesh_input: dict) -> dict:
     # If running for LPBF or not (only LPBF supported)
     Nonmesh.LPBF = nonmesh_input.get("LPBF", True)
 
+    # Temperature probe locations
+    Nonmesh.probe_locations = nonmesh_input.get("probe_locations", [])
+
     # Create output directory if it doesn't exist
     if not os.path.exists(Nonmesh.save_path):
         os.makedirs(Nonmesh.save_path)

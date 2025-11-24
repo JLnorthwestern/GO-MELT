@@ -35,6 +35,11 @@ from .setup_dictionary_functions import (
 from .mesh_functions import getSubstrateNodes
 from go_melt.io.print_functions import printLevelMaxMin
 from go_melt.io.toolpath_functions import count_lines, parsingGcode
+from go_melt.io.probe_functions import (
+    get_probe_regions,
+    initialize_probe_csv,
+    update_probes,
+)
 
 
 # @record_first_call("pre_time_loop_initialization")
@@ -63,6 +68,12 @@ def pre_time_loop_initialization(input_file: Path) -> SimulationState:
         level_names = ["L1", "L2", "L3", "HASTE"]
     else:
         level_names = ["L1", "L2", "L3"]
+
+    temperature_probe_list = get_probe_regions(Nonmesh["probe_locations"])
+    if len(temperature_probe_list) > 0:
+        initialize_probe_csv(
+            Nonmesh["save_path"], num_probes=len(temperature_probe_list)
+        )
 
     # -------------------------------
     # Static Mesh Metadata
@@ -180,6 +191,7 @@ def pre_time_loop_initialization(input_file: Path) -> SimulationState:
         new_dwell_flag=True,
         force_move=True,
         boundary_conditions=boundary_conditions,
+        temperature_probe_list=temperature_probe_list,
     )
 
     return state
@@ -522,6 +534,10 @@ def time_loop_post_execution(
     # Output accumulation
     # -----------------------------------
     state.t_output += laser_all[:, 5].sum()
+    if len(state.temperature_probe_list) > 0:
+        update_probes(
+            state.Levels, state.temperature_probe_list, state.Nonmesh, state.t_output
+        )
 
     _x, _y, _z, *_, _t, _p = laser_all[-1]
     print(f"Laser pos. (mm): X: {_x:.2f}, Y: {_y:.2f}, Z: {_z:.2f}")
