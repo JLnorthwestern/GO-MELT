@@ -175,7 +175,7 @@ def computeL1Temperature(
     return L1T
 
 
-@partial(jax.jit, static_argnames=["ne_nn"])
+@partial(jax.jit, static_argnames=["ne_nn", "boundary_conditions"])
 def computeL2Temperature(
     new_Level1_temperature: jnp.ndarray,
     interpolate_Level1_to_Level2: list[jnp.ndarray],
@@ -187,6 +187,7 @@ def computeL2Temperature(
     L2k: jnp.ndarray,
     L2rhocp: jnp.ndarray,
     dt: float,
+    boundary_conditions: tuple,
 ) -> jnp.ndarray:
     """
     Compute the updated temperature field for Level 2.
@@ -215,12 +216,22 @@ def computeL2Temperature(
     )
 
     # Apply Dirichlet boundary conditions from interpolated Level 1 solution
-    new_Level2_temperature = assignBCsFine(L2T, TfAll, Levels[2])
-
+    for bc_index in range(6):
+        if (
+            boundary_conditions[2][0][bc_index] == 0
+            and boundary_conditions[2][1][bc_index] == 1
+        ):
+            # Type: Dirichlet, Function: Interpolate
+            L2T = assignBCsFine(
+                L2T,
+                TfAll,
+                global_indices=jnp.array(boundary_conditions[2][3][bc_index]),
+            )
+    new_Level2_temperature = L2T
     return new_Level2_temperature
 
 
-@partial(jax.jit, static_argnames=["ne_nn"])
+@partial(jax.jit, static_argnames=["ne_nn", "boundary_conditions"])
 def computeSolutions_L3(
     new_Level2_temperature: jnp.ndarray,
     interpolate_Level2_to_Level3: list[jnp.ndarray],
@@ -231,6 +242,7 @@ def computeSolutions_L3(
     L3k: jnp.ndarray,
     L3rhocp: jnp.ndarray,
     dt: float,
+    boundary_conditions: tuple,
 ) -> jnp.ndarray:
     """
     Compute the updated temperature field for Level 3.
@@ -259,7 +271,17 @@ def computeSolutions_L3(
     )
 
     # Apply Dirichlet boundary conditions from interpolated Level 2 solution
-    new_Level3_temperature = assignBCsFine(new_Level3_temperature, TfAll, Levels[3])
+    for bc_index in range(6):
+        if (
+            boundary_conditions[3][0][bc_index] == 0
+            and boundary_conditions[3][1][bc_index] == 1
+        ):
+            # Type: Dirichlet, Function: Interpolate
+            new_Level3_temperature = assignBCsFine(
+                new_Level3_temperature,
+                TfAll,
+                global_indices=jnp.array(boundary_conditions[3][3][bc_index]),
+            )
 
     return new_Level3_temperature
 
@@ -339,7 +361,18 @@ def computeSolutions(
         Levels_sources[2],
         Level2_Tprime_source,
     )
-    new_Level2_temperature = assignBCsFine(L2T, TfAll, Levels[2])
+    for bc_index in range(6):
+        if (
+            boundary_conditions[2][0][bc_index] == 0
+            and boundary_conditions[2][1][bc_index] == 1
+        ):
+            # Type: Dirichlet, Function: Interpolate
+            L2T = assignBCsFine(
+                L2T,
+                TfAll,
+                global_indices=jnp.array(boundary_conditions[2][3][bc_index]),
+            )
+    new_Level2_temperature = L2T
 
     # Interpolate Level 2 solution to Level 3 for boundary conditions
     TfAll = interpolate_w_matrix(interpolate_Level2_to_Level3, new_Level2_temperature)
@@ -356,7 +389,17 @@ def computeSolutions(
         Levels_sources[3],
         subgrid_source_term=0,
     )
-    new_Level3_temperature = assignBCsFine(new_Level3_temperature, TfAll, Levels[3])
+    for bc_index in range(6):
+        if (
+            boundary_conditions[3][0][bc_index] == 0
+            and boundary_conditions[3][1][bc_index] == 1
+        ):
+            # Type: Dirichlet, Function: Interpolate
+            new_Level3_temperature = assignBCsFine(
+                new_Level3_temperature,
+                TfAll,
+                global_indices=jnp.array(boundary_conditions[3][3][bc_index]),
+            )
 
     return new_Level1_temperature, new_Level2_temperature, new_Level3_temperature
 

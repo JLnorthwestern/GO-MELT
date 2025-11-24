@@ -65,30 +65,17 @@ def assignBCs(
 
 
 @jax.jit
-def assignBCsFine(RHS: jnp.ndarray, TfAll: jnp.ndarray, level: dict) -> jnp.ndarray:
+def assignBCsFine(
+    RHS: jnp.ndarray, TfAll: jnp.ndarray, global_indices: jnp.ndarray
+) -> jnp.ndarray:
     """
     Apply Dirichlet boundary conditions to the fine-level RHS vector.
 
     This function sets the RHS values at boundary nodes using the
     corresponding values from the full fine-scale solution `TfAll`.
     """
-    _RHS = RHS
-    _RHS = _RHS.at[level["conditions"]["west"]["indices"]].set(
-        TfAll[level["conditions"]["west"]["indices"]]
-    )
-    _RHS = _RHS.at[level["conditions"]["east"]["indices"]].set(
-        TfAll[level["conditions"]["east"]["indices"]]
-    )
-    _RHS = _RHS.at[level["conditions"]["south"]["indices"]].set(
-        TfAll[level["conditions"]["south"]["indices"]]
-    )
-    _RHS = _RHS.at[level["conditions"]["north"]["indices"]].set(
-        TfAll[level["conditions"]["north"]["indices"]]
-    )
-    _RHS = _RHS.at[level["conditions"]["bottom"]["indices"]].set(
-        TfAll[level["conditions"]["bottom"]["indices"]]
-    )
-    return _RHS
+    RHS = RHS.at[global_indices].set(TfAll[global_indices])
+    return RHS
 
 
 @partial(jax.jit, static_argnames=["num_elems", "num_nodes", "bc_index"])

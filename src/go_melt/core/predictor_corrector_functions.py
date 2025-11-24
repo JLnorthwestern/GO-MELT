@@ -689,6 +689,7 @@ def compute_Level3_step(
         L3k,
         L3rhocp,
         laser_position[LLidx, 5],
+        boundary_conditions,
     )
     L3T = jnp.maximum(properties["T_amb"], L3T)  # TFSP
 
@@ -740,6 +741,7 @@ def subcycleL2_Part1(
         L2k,
         L2rhocp,
         laser_position[Lidx, 5].sum(),
+        boundary_conditions,
     )
     L2T = jnp.maximum(properties["T_amb"], L2T)  # TFSP
 
@@ -836,6 +838,7 @@ def subcycleL2_Part2(
         L2k,
         L2rhocp,
         laser_position[Lidx, 5].sum(),
+        boundary_conditions,
     )
     L2T = jnp.maximum(properties["T_amb"], L2T)  # TFSP
 
