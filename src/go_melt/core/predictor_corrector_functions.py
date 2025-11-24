@@ -7,6 +7,7 @@ from go_melt.utils.helper_functions import getOverlapRegion
 from .phase_state_functions import updateStateProperties, computeStateProperties
 from .boundary_condition_functions import (
     computeConvRadBC,
+    computeConvectionBC,
     get_surface_faces,
 )
 from .move_mesh_functions import moveEverything
@@ -109,6 +110,7 @@ def stepGOMELT(
             boundary_conditions[1][0][bc_index] == 1
             and boundary_conditions[1][1][bc_index] == 0
         ):
+            # Type: Neumann; Function: Surface
             Fc = computeConvRadBC(
                 L1,
                 L1["T0"],
@@ -119,6 +121,29 @@ def stepGOMELT(
                 jnp.array(boundary_conditions[1][4][bc_index]),
                 bc_index,
             )
+        elif (
+            boundary_conditions[1][0][bc_index] == 1
+            and boundary_conditions[1][1][bc_index] == 1
+        ):
+            # Type: Neumann; Function: Convection
+            Fc = computeConvectionBC(
+                L1,
+                L1["T0"],
+                ne_nn[0][1],
+                ne_nn[1][1],
+                properties,
+                Fc,
+                jnp.array(boundary_conditions[1][4][bc_index]),
+                bc_index,
+                value=boundary_conditions[1][2][bc_index],
+            )
+        elif (
+            boundary_conditions[1][0][bc_index] == 1
+            and boundary_conditions[1][1][bc_index] == 2
+        ):
+            # Type: Neumann; Function: Adiabatic
+            pass
+
         if (
             boundary_conditions[2][0][bc_index] == 1
             and boundary_conditions[2][1][bc_index] == 0
@@ -133,6 +158,7 @@ def stepGOMELT(
                 jnp.array(boundary_conditions[2][4][bc_index]),
                 bc_index,
             )
+
         if (
             boundary_conditions[3][0][bc_index] == 1
             and boundary_conditions[3][1][bc_index] == 0
@@ -154,7 +180,18 @@ def stepGOMELT(
     Vmu = computeL2TprimeTerms_Part1(Levels, ne_nn, Levels[3]["Tprime0"], Lk[3], Shapes)
 
     L1T, L2T, L3T = computeSolutions(
-        Levels, ne_nn, tmp_ne_nn, F, Vcu, LInterp, Lk, Lrhocp, Vmu, dt, properties
+        Levels,
+        ne_nn,
+        tmp_ne_nn,
+        F,
+        Vcu,
+        LInterp,
+        Lk,
+        Lrhocp,
+        Vmu,
+        dt,
+        properties,
+        boundary_conditions,
     )
 
     # Enforce minimum temperature (TFSP)
@@ -178,7 +215,18 @@ def stepGOMELT(
 
     # --- Corrector step ---
     L1T, L2T, Levels[3]["T0"] = computeSolutions(
-        Levels, ne_nn, tmp_ne_nn, F, Vcu, LInterp, Lk, Lrhocp, Vmu, dt, properties
+        Levels,
+        ne_nn,
+        tmp_ne_nn,
+        F,
+        Vcu,
+        LInterp,
+        Lk,
+        Lrhocp,
+        Vmu,
+        dt,
+        properties,
+        boundary_conditions,
     )
 
     # Enforce minimum temperature again (TFSP)
@@ -345,6 +393,7 @@ def subcycleGOMELT(
             L1rhocp,
             laser_position[:, 5].sum(),
             properties,
+            boundary_conditions,
         )
         L1T = jnp.maximum(properties["T_amb"], L1T)  # TFSP
 
@@ -501,6 +550,7 @@ def computeLevel1predictor(
         L1rhocp,
         laser_position[:, 5].sum(),
         properties,
+        boundary_conditions,
     )
     L1T = jnp.maximum(properties["T_amb"], L1T)  # TFSP
 

@@ -53,32 +53,15 @@ def getBCindices(level: obj) -> list[jnp.ndarray]:
 
 
 @jax.jit
-def assignBCs(RHS: jnp.ndarray, Levels: list[dict]) -> jnp.ndarray:
+def assignBCs(
+    RHS: jnp.ndarray, global_indices: jnp.ndarray, value: float
+) -> jnp.ndarray:
     """
     Apply Dirichlet boundary conditions to the right-hand side (RHS) vector.
-
-    This function sets prescribed values at boundary nodes for Level 1
-    based on the boundary condition indices and values stored in the
-    Levels dictionary.
     """
-    _RHS = RHS
-    _RHS = _RHS.at[Levels[1]["conditions"]["west"]["indices"]].set(
-        Levels[1]["conditions"]["west"]["value"]
-    )  # y-min
-    _RHS = _RHS.at[Levels[1]["conditions"]["east"]["indices"]].set(
-        Levels[1]["conditions"]["east"]["value"]
-    )  # y-max
-    _RHS = _RHS.at[Levels[1]["conditions"]["south"]["indices"]].set(
-        Levels[1]["conditions"]["south"]["value"]
-    )  # x-min
-    _RHS = _RHS.at[Levels[1]["conditions"]["north"]["indices"]].set(
-        Levels[1]["conditions"]["north"]["value"]
-    )  # x-max
-    _RHS = _RHS.at[Levels[1]["conditions"]["bottom"]["indices"]].set(
-        Levels[1]["conditions"]["bottom"]["value"]
-    )  # z-min
+    RHS = RHS.at[global_indices].set(value)
 
-    return _RHS
+    return RHS
 
 
 @jax.jit
@@ -120,7 +103,7 @@ def computeConvRadBC(
     bc_index: int,
 ) -> jnp.ndarray:
     """
-    Compute Neumann boundary conditions on the top surface due to:
+    Compute Neumann boundary conditions on the surface due to:
       • Convection (Newton's law of cooling)
       • Radiation (Stefan-Boltzmann law)
       • Evaporation (empirical model)
@@ -208,6 +191,21 @@ def computeConvRadBC(
     NeumannBC = jnp.bincount(aidx.reshape(-1), aT.reshape(-1), length=num_nodes)
 
     return flux_vector + NeumannBC
+
+
+@partial(jax.jit, static_argnames=["num_elems", "num_nodes", "bc_index"])
+def computeConvectionBC(
+    Level: dict,
+    temperature: jnp.ndarray,
+    num_elems: int,
+    num_nodes: int,
+    properties: dict,
+    flux_vector: jnp.ndarray,
+    local_indices: jnp.ndarray,
+    bc_index: int,
+    RC: float,
+) -> jnp.ndarray:
+    pass
 
 
 @partial(jax.jit, static_argnames=["number_elems", "elements"])

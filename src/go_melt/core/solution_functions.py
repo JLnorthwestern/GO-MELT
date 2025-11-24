@@ -8,7 +8,12 @@ from go_melt.utils.gaussian_quadrature_functions import (
     computeQuad3dFemShapeFunctions_jax,
 )
 from .mesh_functions import getSampleCoords
-from .boundary_condition_functions import computeConvRadBC, assignBCs, assignBCsFine
+from .boundary_condition_functions import (
+    computeConvRadBC,
+    assignBCs,
+    assignBCsFine,
+    computeConvectionBC,
+)
 from go_melt.utils.helper_functions import convert2XYZ, static_set_in_array
 from .phase_state_functions import computeStateProperties
 from go_melt.io.save_results_functions import record_first_call
@@ -48,6 +53,7 @@ def stepGOMELTDwellTime(
             boundary_conditions[1][0][bc_index] == 1
             and boundary_conditions[1][1][bc_index] == 0
         ):
+            # Type: Neumann; Function: Surface
             source_term = computeConvRadBC(
                 L1,
                 L1["T0"],
@@ -58,6 +64,28 @@ def stepGOMELTDwellTime(
                 jnp.array(boundary_conditions[1][4][bc_index]),
                 bc_index,
             )
+        elif (
+            boundary_conditions[1][0][bc_index] == 1
+            and boundary_conditions[1][1][bc_index] == 1
+        ):
+            # Type: Neumann; Function: Convection
+            Fc = computeConvectionBC(
+                L1,
+                L1["T0"],
+                ne_nn[0][1],
+                ne_nn[1][1],
+                properties,
+                Fc,
+                jnp.array(boundary_conditions[1][4][bc_index]),
+                bc_index,
+                value=boundary_conditions[1][2][bc_index],
+            )
+        elif (
+            boundary_conditions[1][0][bc_index] == 1
+            and boundary_conditions[1][1][bc_index] == 2
+        ):
+            # Type: Neumann; Function: Adiabatic
+            pass
 
     # Compute temperature-dependent properties
     _, _, k, rhocp = computeStateProperties(
@@ -73,13 +101,26 @@ def stepGOMELTDwellTime(
     T_new = static_set_in_array(T_new, inactive_start_idx, properties["T_amb"])
 
     # Apply boundary conditions and update Level 1 temperature
-    Levels[1]["T0"] = assignBCs(T_new, Levels)
+    for bc_index in range(6):
+        if (
+            boundary_conditions[1][0][bc_index] == 0
+            and boundary_conditions[1][1][bc_index] == 0
+        ):
+            # Type: Dirichlet, Function: Constant
+            T_new = assignBCs(
+                T_new,
+                global_indices=jnp.array(boundary_conditions[1][3][bc_index]),
+                value=boundary_conditions[1][2][bc_index],
+            )
+
+    # Assign final temperature to Level 1's temperature field
+    Levels[1]["T0"] = T_new
 
     return Levels
 
 
 # @record_first_call("computeL1Temperature")
-@partial(jax.jit, static_argnames=["ne_nn", "tmp_ne_nn"])
+@partial(jax.jit, static_argnames=["ne_nn", "tmp_ne_nn", "boundary_conditions"])
 def computeL1Temperature(
     Levels: list[dict],
     ne_nn: tuple,
@@ -90,6 +131,7 @@ def computeL1Temperature(
     L1rhocp: jnp.ndarray,
     dt: float,
     properties: dict,
+    boundary_conditions: tuple,
 ) -> jnp.ndarray:
     """
     Compute the updated temperature field for Level 1.
@@ -119,9 +161,18 @@ def computeL1Temperature(
     L1T = static_set_in_array(L1T, inactive_start_idx, properties["T_amb"])
 
     # Enforce Dirichlet boundary conditions
-    new_Level1_temperature = assignBCs(L1T, Levels)
-
-    return new_Level1_temperature
+    for bc_index in range(6):
+        if (
+            boundary_conditions[1][0][bc_index] == 0
+            and boundary_conditions[1][1][bc_index] == 0
+        ):
+            # Type: Dirichlet, Function: Constant
+            L1T = assignBCs(
+                L1T,
+                global_indices=jnp.array(boundary_conditions[1][3][bc_index]),
+                value=boundary_conditions[1][2][bc_index],
+            )
+    return L1T
 
 
 @partial(jax.jit, static_argnames=["ne_nn"])
@@ -214,7 +265,7 @@ def computeSolutions_L3(
 
 
 # @record_first_call("computeSolutions")
-@partial(jax.jit, static_argnames=["ne_nn", "tmp_ne_nn"])
+@partial(jax.jit, static_argnames=["ne_nn", "tmp_ne_nn", "boundary_conditions"])
 def computeSolutions(
     Levels: list[dict],
     ne_nn: tuple,
@@ -227,6 +278,7 @@ def computeSolutions(
     Level2_Tprime_source: jnp.ndarray,
     dt: float,
     properties: dict,
+    boundary_conditions: tuple,
 ) -> tuple[jnp.ndarray, jnp.ndarray, jnp.ndarray]:
     """
     Compute temperature solutions across three levels using a matrix-free FEM solver.
@@ -258,7 +310,19 @@ def computeSolutions(
         Level1_Tprime_source,
     )
     L1T = static_set_in_array(L1T, inactive_start_idx, properties["T_amb"])
-    new_Level1_temperature = assignBCs(L1T, Levels)
+
+    for bc_index in range(6):
+        if (
+            boundary_conditions[1][0][bc_index] == 0
+            and boundary_conditions[1][1][bc_index] == 0
+        ):
+            # Type: Dirichlet, Function: Constant
+            L1T = assignBCs(
+                L1T,
+                global_indices=jnp.array(boundary_conditions[1][3][bc_index]),
+                value=boundary_conditions[1][2][bc_index],
+            )
+    new_Level1_temperature = L1T
 
     # Interpolate Level 1 solution to Level 2 for source term
     TfAll = interpolate_w_matrix(interpolate_Level1_to_Level2, new_Level1_temperature)
