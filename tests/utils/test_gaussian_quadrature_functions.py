@@ -9,7 +9,7 @@ from go_melt.utils.gaussian_quadrature_functions import (
 )
 
 
-def test_computeQuad2dFemShapeFunctions_basic():
+def test_computeQuad2dFemShapeFunctions():
     # Construct coords with last 4 nodes forming a unit square in XY:
     # ordering of last 4 nodes: we'll set them as (0,0),(2,0),(2,2),(0,2)
     # coords shape must be (8,2); first 4 rows can be dummy
@@ -20,7 +20,7 @@ def test_computeQuad2dFemShapeFunctions_basic():
         ]
     )
 
-    N, dNdx, wq = computeQuad2dFemShapeFunctions_jax(coords)
+    N, dNdx, wq = computeQuad2dFemShapeFunctions_jax(coords[4:, :])
 
     # Shapes: N (4 gauss points x 4 shape funcs), dNdx (4,4,2), wq (4,1)
     assert N.shape == (4, 4)
@@ -86,7 +86,7 @@ def test_getQuadratureCoords():
             jnp.array([[0.0, 0.0], [2.0, 0.0], [2.0, 3.0], [0.0, 3.0]]),
         ]
     )
-    Nf, _, _ = computeQuad2dFemShapeFunctions_jax(coords2D)
+    Nf, _, _ = computeQuad2dFemShapeFunctions_jax(coords2D[4:, :])
 
     node_coords_x = jnp.linspace(0, 4, 3)
     node_coords_y = jnp.linspace(0, 3, 2)
