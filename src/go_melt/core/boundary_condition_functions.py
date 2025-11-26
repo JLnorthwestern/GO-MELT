@@ -262,7 +262,9 @@ def computeConvectionBC(
 
 
 @partial(jax.jit, static_argnames=["number_elems", "elements"])
-def get_surface_faces(level, solid_indicator, number_elems, elements):
+def get_surface_faces(
+    level: dict, solid_indicator: jnp.ndarray, number_elems: int, elements: tuple[int]
+):
     def calcVal(i):
         _, _, _, idx = convert2XYZ(
             i,
