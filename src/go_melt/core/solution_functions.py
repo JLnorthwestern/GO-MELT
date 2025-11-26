@@ -44,6 +44,11 @@ def stepGOMELTDwellTime(
     num_elements_L1 = tmp_ne_nn[0]
     inactive_start_idx = tmp_ne_nn[1]
 
+    # Compute temperature-dependent properties
+    _, _, k, rhocp = computeStateProperties(
+        L1["T0"], L1["S1"], properties, substrate[1]
+    )
+
     # Dwell time does not apply a heat source
     source_term = jnp.zeros_like(L1["T0"])
 
@@ -69,16 +74,17 @@ def stepGOMELTDwellTime(
             and boundary_conditions[1][1][bc_index] == 1
         ):
             # Type: Neumann; Function: Convection
-            Fc = computeConvectionBC(
+            source_term = computeConvectionBC(
                 L1,
                 L1["T0"],
                 ne_nn[0][1],
                 ne_nn[1][1],
                 properties,
-                Fc,
+                source_term,
                 jnp.array(boundary_conditions[1][4][bc_index]),
                 bc_index,
-                value=boundary_conditions[1][2][bc_index],
+                tau=boundary_conditions[1][2][bc_index],
+                rhocp=rhocp,
             )
         elif (
             boundary_conditions[1][0][bc_index] == 1
@@ -86,11 +92,6 @@ def stepGOMELTDwellTime(
         ):
             # Type: Neumann; Function: Adiabatic
             pass
-
-    # Compute temperature-dependent properties
-    _, _, k, rhocp = computeStateProperties(
-        L1["T0"], L1["S1"], properties, substrate[1]
-    )
 
     # Solve temperature field using matrix-free FEM
     T_new = solveMatrixFreeFE(

@@ -190,9 +190,75 @@ def computeConvectionBC(
     flux_vector: jnp.ndarray,
     local_indices: jnp.ndarray,
     bc_index: int,
-    RC: float,
+    tau: float,
+    rhocp: jnp.ndarray,
 ) -> jnp.ndarray:
-    pass
+    """
+    Compute Neumann boundary conditions on the surface due to:
+      • Convection (Newton's law of cooling)
+      • Radiation (Stefan-Boltzmann law)
+      • Evaporation (empirical model)
+
+    The resulting heat flux is integrated using 2D quadrature and added
+    to the global force vector.
+    """
+    open_surfaces = Level["S1faces"][bc_index]
+
+    # Extract physical constants
+    T_amb = properties["T_amb"]
+
+    # Mesh geometry
+    x, y = Level["node_coords"][0], Level["node_coords"][1]
+    cx, cy = Level["connect"][0], Level["connect"][1]
+    ne_x = jnp.size(cx, 0)
+    ne_y = jnp.size(cy, 0)
+    nn_x, nn_y = ne_x + 1, ne_y + 1
+    volume = Level["h"][0] * Level["h"][1] * Level["h"][2] * Level["active"].sum()
+
+    # Coordinates of a representative top-surface element
+    coords = jnp.stack([x[cx[0, :]], y[cy[0, :]]], axis=1)
+
+    # Precompute shape functions and quadrature weights
+    coords = jnp.array([[0.0, 1.0, 1.0, 0.0], [0.0, 0.0, 1.0, 1.0]]).T
+    if bc_index in [0, 1]:
+        coords = coords.at[:, 0].multiply(Level["h"][1])
+        coords = coords.at[:, 1].multiply(Level["h"][2])
+        area = Level["h"][1] * Level["h"][2] * open_surfaces.sum()
+    elif bc_index in [2, 3]:
+        coords = coords.at[:, 0].multiply(Level["h"][0])
+        coords = coords.at[:, 1].multiply(Level["h"][2])
+        area = Level["h"][0] * Level["h"][2] * open_surfaces.sum()
+    else:
+        coords = coords.at[:, 0].multiply(Level["h"][0])
+        coords = coords.at[:, 1].multiply(Level["h"][1])
+        area = Level["h"][0] * Level["h"][1] * open_surfaces.sum()
+    N, _, wq = computeQuad2dFemShapeFunctions_jax(coords)
+
+    def calcCR(i):
+        """
+        Compute the integrated heat flux vector for a single top-surface element.
+        """
+        _, _, _, idx = convert2XYZ(i, ne_x, ne_y, nn_x, nn_y)
+
+        # Calculate convection coefficient
+        h_conv_calc = (rhocp[idx].mean() * volume) / (tau * area)
+
+        # Interpolate nodal temperatures to quadrature points
+        Tq = jnp.matmul(N, temperature[idx[local_indices]])
+
+        # Total heat flux (positive into the domain)
+        q_flux = h_conv_calc * (T_amb - Tq)
+
+        # Integrate over the element
+        return (
+            jnp.matmul(N.T, q_flux * wq.reshape(-1)) * open_surfaces[i],
+            idx[local_indices],
+        )
+
+    aT, aidx = jax.vmap(calcCR)(jnp.arange(num_elems))
+    NeumannBC = jnp.bincount(aidx.reshape(-1), aT.reshape(-1), length=num_nodes)
+
+    return flux_vector + NeumannBC
 
 
 @partial(jax.jit, static_argnames=["number_elems", "elements"])

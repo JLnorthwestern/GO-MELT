@@ -135,7 +135,8 @@ def stepGOMELT(
                 Fc,
                 jnp.array(boundary_conditions[1][4][bc_index]),
                 bc_index,
-                value=boundary_conditions[1][2][bc_index],
+                tau=boundary_conditions[1][2][bc_index],
+                rhocp=Lrhocp[1],
             )
         elif (
             boundary_conditions[1][0][bc_index] == 1
@@ -527,16 +528,40 @@ def computeLevel1predictor(
             boundary_conditions[1][0][bc_index] == 1
             and boundary_conditions[1][1][bc_index] == 0
         ):
+            # Type: Neumann; Function: Surface
             L1F = computeConvRadBC(
                 Levels[1],
                 Levels[1]["T0"],
-                tmp_ne_nn[0],
+                ne_nn[0][1],
                 ne_nn[1][1],
                 properties,
                 L1F,
                 jnp.array(boundary_conditions[1][4][bc_index]),
                 bc_index,
             )
+        elif (
+            boundary_conditions[1][0][bc_index] == 1
+            and boundary_conditions[1][1][bc_index] == 1
+        ):
+            # Type: Neumann; Function: Convection
+            L1F = computeConvectionBC(
+                Levels[1],
+                Levels[1]["T0"],
+                ne_nn[0][1],
+                ne_nn[1][1],
+                properties,
+                L1F,
+                jnp.array(boundary_conditions[1][4][bc_index]),
+                bc_index,
+                tau=boundary_conditions[1][2][bc_index],
+                rhocp=L1rhocp,
+            )
+        elif (
+            boundary_conditions[1][0][bc_index] == 1
+            and boundary_conditions[1][1][bc_index] == 2
+        ):
+            # Type: Neumann; Function: Adiabatic
+            pass
     L1V = computeL1TprimeTerms_Part1(Levels, ne_nn, L3k_L1, Shapes, L2k_L1)
 
     # --- Level 1 Temperature Predictor ---
