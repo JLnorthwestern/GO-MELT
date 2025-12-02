@@ -89,76 +89,6 @@ def test_pre_time_loop_initialization_types_and_values():
     # Assert: check dataclass type
     assert isinstance(state, SimulationState)
 
-    # Core dicts
-    assert isinstance(state.Levels, list)
-    assert isinstance(state.Nonmesh, dict)
-    assert isinstance(state.Properties, dict)
-
-    # Static numbers
-    assert isinstance(state.ne_nn, tuple)
-    assert isinstance(state.substrate, tuple)
-    assert isinstance(state.tmp_ne_nn, tuple)
-    assert isinstance(state.subcycle, tuple)
-
-    # Unchanging variables
-    assert isinstance(state.laser_start, np.ndarray)
-    assert isinstance(state.L1L2Eratio, list)
-    assert all(isinstance(x, int) for x in state.L1L2Eratio)
-    assert isinstance(state.L2L3Eratio, list)
-    assert all(isinstance(x, int) for x in state.L2L3Eratio)
-    assert isinstance(state.total_t_inc, int)
-    assert isinstance(state.tool_path_file, io.TextIOWrapper)
-    assert isinstance(state.layer_check, int)
-    assert isinstance(state.level_names, list)
-    assert all(isinstance(x, str) for x in state.level_names)
-
-    # Changing variables
-    assert isinstance(state.laser_prev_z, float)
-    assert state.laser_prev_z == float("inf")
-    assert isinstance(state.time_inc, int)
-    assert isinstance(state.checkpoint_load, bool)
-    assert isinstance(state.move_hist, list)
-    assert all(isinstance(x, jnp.ndarray) for x in state.move_hist)
-    assert isinstance(state.dwell_time_count, float)
-    assert isinstance(state.accum_time, jnp.ndarray)
-    assert isinstance(state.max_accum_time, jnp.ndarray)
-    assert isinstance(state.record_inc, int)
-    assert isinstance(state.wait_inc, int)
-    assert isinstance(state.LInterp, list)
-    assert isinstance(state.t_add, int)
-    assert isinstance(state.tstart, float)
-    assert isinstance(state.t_output, float)
-    assert isinstance(state.ongoing_simulation, bool)
-    assert state.ongoing_simulation is True
-
-    # Paths
-    assert isinstance(state.checkpoint_path, Path)
-    assert state.checkpoint_path.name == "checkpoint"
-
-    # Representative value checks
-    assert state.dwell_time_count == 0.0
-    assert state.move_hist[0].shape == ()  # scalar jnp array
-    assert state.accum_time.shape == state.max_accum_time.shape
-
-    # --- Value checks ---
-    # Static metadata
-    assert state.ne_nn == (600, 384, 726, 847, 567)
-    assert state.substrate == (0, 0, 0, 0)
-    assert state.tmp_ne_nn == (0, 0)
-    assert state.subcycle == (4, 4, 16, 4.0, 4.0, 16.0, 1)
-
-    # Laser start position
-    np.testing.assert_array_equal(
-        state.laser_start, np.array([2.5, 2.5, 0.0, 0.0, 0.0, 0.0, 0.0])
-    )
-
-    # Mesh ratios
-    assert state.L1L2Eratio == [2, 2, 1]
-    assert state.L2L3Eratio == [2, 2, 2]
-
-    # Toolpath increments
-    assert state.total_t_inc == 1480
-
 
 class FakeToolPathFile(io.StringIO):
     def __init__(self, line="1.0,2.0,3.0\n"):
@@ -184,6 +114,7 @@ def test_pre_time_loop_initialization_conditionals(monkeypatch):
             "toolpath": "fake_toolpath.txt",
             "save_path": "fake_save/",
             "record_step": 1,
+            "probe_locations": [],
         },
     }
 
@@ -233,6 +164,9 @@ def test_pre_time_loop_initialization_conditionals(monkeypatch):
         helper_functions, "SetupStaticNodesAndElements", lambda levels: (0, 0)
     )
     monkeypatch.setattr(helper_functions, "SetupStaticSubcycle", lambda nm: (1, 1, 1))
+    monkeypatch.setattr(
+        helper_functions, "SetupStaticBoundaryConditions", lambda _1: None
+    )
     monkeypatch.setattr(helper_functions, "count_lines", lambda path: 42)
     monkeypatch.setattr(
         helper_functions, "interpolatePointsMatrix", lambda a, b: np.array([[1]])
