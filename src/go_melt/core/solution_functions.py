@@ -83,8 +83,7 @@ def stepGOMELTDwellTime(
                 source_term,
                 jnp.array(boundary_conditions[1][4][bc_index]),
                 bc_index,
-                tau=boundary_conditions[1][2][bc_index],
-                rhocp=rhocp,
+                h_conv=boundary_conditions[1][2][bc_index],
             )
         elif (
             boundary_conditions[1][0][bc_index] == 1

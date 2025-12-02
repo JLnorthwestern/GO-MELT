@@ -257,6 +257,32 @@ def get_with_units(prop_obj, key, default_value, default_unit):
     return result
 
 
+def get_with_units_obj(prop_obj, key, default_value, default_unit):
+    """
+    Extracts an attribute with units from an object, converts to SI, returns float.
+    Assumes the attribute is itself an object/dict with 'value' and 'unit'.
+    """
+    ureg = pint.UnitRegistry()
+
+    # Try to get the attribute; fall back to default dict if missing
+    entry = getattr(prop_obj, key, None)
+
+    if entry is None:
+        # No attribute at all → use defaults
+        value, unit = default_value, default_unit
+    else:
+        # Attribute exists → check if it's object-like or dict-like
+        if hasattr(entry, "value") and hasattr(entry, "unit"):
+            value = getattr(entry, "value", default_value)
+            unit = getattr(entry, "unit", default_unit)
+        else:
+            # Unexpected type → just use defaults
+            value, unit = default_value, default_unit
+
+    result = (value * ureg(unit)).to(default_unit).magnitude
+    return result
+
+
 def SetupNonmesh(nonmesh_input: dict) -> dict:
     """
     Initialize and return a dictionary of non-mesh simulation parameters.
@@ -486,6 +512,9 @@ def convert_boundary_types(level: dict) -> dict:
                 bc.function = 0
             elif bc.function == "Convection":
                 bc.function = 1
+                bc.value = get_with_units_obj(bc, "h_conv", 1.0e1, "W/(mm^2*K)")
+                delattr(bc, "h_conv")
+
             elif bc.function == "Adiabatic":
                 bc.function = 2
     return level

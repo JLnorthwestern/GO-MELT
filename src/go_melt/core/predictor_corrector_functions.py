@@ -135,8 +135,7 @@ def stepGOMELT(
                 Fc,
                 jnp.array(boundary_conditions[1][4][bc_index]),
                 bc_index,
-                tau=boundary_conditions[1][2][bc_index],
-                rhocp=Lrhocp[1],
+                h_conv=boundary_conditions[1][2][bc_index],
             )
         elif (
             boundary_conditions[1][0][bc_index] == 1
@@ -553,8 +552,7 @@ def computeLevel1predictor(
                 L1F,
                 jnp.array(boundary_conditions[1][4][bc_index]),
                 bc_index,
-                tau=boundary_conditions[1][2][bc_index],
-                rhocp=L1rhocp,
+                h_conv=boundary_conditions[1][2][bc_index],
             )
         elif (
             boundary_conditions[1][0][bc_index] == 1

@@ -190,8 +190,7 @@ def computeConvectionBC(
     flux_vector: jnp.ndarray,
     local_indices: jnp.ndarray,
     bc_index: int,
-    tau: float,
-    rhocp: jnp.ndarray,
+    h_conv: float,
 ) -> jnp.ndarray:
     """
     Compute Neumann boundary conditions on the surface due to:
@@ -213,7 +212,6 @@ def computeConvectionBC(
     ne_x = jnp.size(cx, 0)
     ne_y = jnp.size(cy, 0)
     nn_x, nn_y = ne_x + 1, ne_y + 1
-    volume = Level["h"][0] * Level["h"][1] * Level["h"][2] * Level["active"].sum()
 
     # Coordinates of a representative top-surface element
     coords = jnp.stack([x[cx[0, :]], y[cy[0, :]]], axis=1)
@@ -223,15 +221,12 @@ def computeConvectionBC(
     if bc_index in [0, 1]:
         coords = coords.at[:, 0].multiply(Level["h"][1])
         coords = coords.at[:, 1].multiply(Level["h"][2])
-        area = Level["h"][1] * Level["h"][2] * open_surfaces.sum()
     elif bc_index in [2, 3]:
         coords = coords.at[:, 0].multiply(Level["h"][0])
         coords = coords.at[:, 1].multiply(Level["h"][2])
-        area = Level["h"][0] * Level["h"][2] * open_surfaces.sum()
     else:
         coords = coords.at[:, 0].multiply(Level["h"][0])
         coords = coords.at[:, 1].multiply(Level["h"][1])
-        area = Level["h"][0] * Level["h"][1] * open_surfaces.sum()
     N, _, wq = computeQuad2dFemShapeFunctions_jax(coords)
 
     def calcCR(i):
@@ -240,14 +235,11 @@ def computeConvectionBC(
         """
         _, _, _, idx = convert2XYZ(i, ne_x, ne_y, nn_x, nn_y)
 
-        # Calculate convection coefficient
-        h_conv_calc = (rhocp[idx].mean() * volume) / (tau * area)
-
         # Interpolate nodal temperatures to quadrature points
         Tq = jnp.matmul(N, temperature[idx[local_indices]])
 
         # Total heat flux (positive into the domain)
-        q_flux = h_conv_calc * (T_amb - Tq)
+        q_flux = h_conv * (T_amb - Tq)
 
         # Integrate over the element
         return (
