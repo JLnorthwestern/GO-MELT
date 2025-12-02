@@ -8,8 +8,10 @@ from go_melt.utils.gaussian_quadrature_functions import (
 )
 from go_melt.utils.helper_functions import convert2XYZ, bincount
 from .mesh_functions import getSampleCoords
+from go_melt.io.save_results_functions import record_first_call
 
 
+# @record_first_call("computeLevelSource")
 @partial(jax.jit, static_argnames=["ne_nn"])
 def computeLevelSource(
     Levels: list[dict],
@@ -123,6 +125,7 @@ def computeSourcesL3(
     return Level3_source
 
 
+# @record_first_call("computeSources")
 @partial(jax.jit, static_argnames=["ne_nn"])
 def computeSources(
     Level: dict,

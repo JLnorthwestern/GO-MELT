@@ -292,8 +292,7 @@ def test_computeConvectionBC():
     # local_indices: which nodes of each element belong to the boundary face
     local_indices = jnp.array([0, 1, 2, 3])
     bc_index = 0  # pick one boundary face
-    tau = 1.0
-    rhocp = jnp.ones(num_nodes) * 1000.0  # uniform density*cp
+    h_conv = 10.0e-6
 
     result = computeConvectionBC(
         Level,
@@ -304,8 +303,7 @@ def test_computeConvectionBC():
         flux_vector,
         local_indices,
         bc_index,
-        tau,
-        rhocp,
+        h_conv,
     )
 
     # Check output shape

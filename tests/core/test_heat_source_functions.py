@@ -8,6 +8,12 @@ from go_melt.core.heat_source_functions import (
     computeSources,
     computeSourceFunction_jax,
 )
+from pathlib import Path
+
+
+@pytest.fixture
+def inputs_dir():
+    return Path(__file__).parent / "inputs"
 
 
 def test_computeSourceFunction_jax_runs():
@@ -27,9 +33,9 @@ def test_computeSourceFunction_jax_runs():
     assert jnp.all(Q >= 0)
 
 
-def test_computeLevelSource_runs():
-    with open("tests/core/inputs/inputs_computeLevelSource.pkl", "rb") as f:
-        Levels, ne_nn, laser_position, Shapes1, properties, laserP = dill.load(f)
+def test_computeLevelSource_runs(inputs_dir):
+    with open(inputs_dir / "inputs_computeLevelSource.pkl", "rb") as f:
+        Levels, ne_nn, laser_position, Shapes1, properties, laserP = dill.load(f)[0]
 
     result = computeLevelSource(
         Levels, ne_nn, laser_position, Shapes1, properties, laserP
@@ -37,18 +43,20 @@ def test_computeLevelSource_runs():
     assert isinstance(result, jnp.ndarray)
 
 
-def test_computeSourcesL3_runs():
-    with open("tests/core/inputs/inputs_computeSourcesL3.pkl", "rb") as f:
-        L3, laser_position, ne_nn, properties, laser_power = dill.load(f)
+def test_computeSourcesL3_runs(inputs_dir):
+    with open(inputs_dir / "inputs_computeLevelSource.pkl", "rb") as f:
+        Levels, ne_nn, laser_position, _, properties, laser_power = dill.load(f)[0]
 
-    result = computeSourcesL3(L3, laser_position, ne_nn, properties, laser_power)
+    result = computeSourcesL3(
+        Levels[3], laser_position[0], ne_nn, properties, laser_power[0]
+    )
     assert isinstance(result, jnp.ndarray)
     assert result.shape[0] == 567
 
 
-def test_computeSources_runs():
-    with open("tests/core/inputs/inputs_computeSources.pkl", "rb") as f:
-        L3, v, Shapes, ne_nn, properties, laserP = dill.load(f)
+def test_computeSources_runs(inputs_dir):
+    with open(inputs_dir / "inputs_computeSources.pkl", "rb") as f:
+        L3, v, Shapes, ne_nn, properties, laserP = dill.load(f)[0]
 
     Fc, Fm, Ff = computeSources(L3, v, Shapes, ne_nn, properties, laserP)
     assert isinstance(Fc, jnp.ndarray)
