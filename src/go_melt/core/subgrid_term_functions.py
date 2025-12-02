@@ -15,8 +15,10 @@ from go_melt.utils.interpolation_functions import (
     interpolate_w_matrix,
     interpolatePoints,
 )
+from go_melt.io.save_results_functions import record_first_call
 
 
+# @record_first_call("computeL2TprimeTerms_Part1")
 @partial(jax.jit, static_argnames=["ne_nn"])
 def computeL2TprimeTerms_Part1(
     Levels: dict[int, dict],
@@ -68,6 +70,7 @@ def computeL2TprimeTerms_Part1(
     return Level2_Tprime_source
 
 
+# @record_first_call("computeL2TprimeTerms_Part2")
 @partial(jax.jit, static_argnames=["ne_nn"])
 def computeL2TprimeTerms_Part2(
     Levels: dict[int, dict],
@@ -123,6 +126,7 @@ def computeL2TprimeTerms_Part2(
     return Level2_Tprime_Source
 
 
+# @record_first_call("computeL1TprimeTerms_Part1")
 @partial(jax.jit, static_argnames=["ne_nn"])
 def computeL1TprimeTerms_Part1(
     Levels: dict[int, dict],
@@ -208,6 +212,7 @@ def computeL1TprimeTerms_Part1(
     return Level1_Tprime_source
 
 
+# @record_first_call("computeL1TprimeTerms_Part2")
 @partial(jax.jit, static_argnames=["ne_nn"])
 def computeL1TprimeTerms_Part2(
     Levels: dict[int, dict],
@@ -288,6 +293,7 @@ def computeL1TprimeTerms_Part2(
     return Level1_Tprime_source
 
 
+# @record_first_call("getNewTprime")
 @jax.jit
 def getNewTprime(
     fine_level: dict[str, list],

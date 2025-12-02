@@ -21,6 +21,8 @@ def test_stepGOMELT():
             max_accum_time,
             accum_time,
             record_accum,
+            LPBF_indicator,
+            boundary_conditions,
         ) = dill.load(f)[0]
     Levels, max_accum_time, accum_time = stepGOMELT(
         Levels,
@@ -36,6 +38,8 @@ def test_stepGOMELT():
         max_accum_time,
         accum_time,
         record_accum,
+        LPBF_indicator,
+        boundary_conditions,
     )
     assert isinstance(Levels, list)
 
@@ -58,6 +62,7 @@ def test_subcycleGOMELT():
             L1L2Eratio,
             L2L3Eratio,
             record_accum,
+            boundary_conditions,
         ) = dill.load(f)[0]
         (Levels, L2all, L3pall, move_hist, LInterp, max_accum_time, accum_time) = (
             subcycleGOMELT(
@@ -76,6 +81,7 @@ def test_subcycleGOMELT():
                 L1L2Eratio,
                 L2L3Eratio,
                 record_accum,
+                boundary_conditions,
             )
         )
     assert isinstance(Levels, list)
@@ -97,6 +103,8 @@ def test_stepGOMELT_TAM():
             max_accum_time,
             accum_time,
             record_accum,
+            LPBF_indicator,
+            boundary_conditions,
         ) = dill.load(f)[0]
 
     # Turn TAM recording on to access end part of code
@@ -116,6 +124,8 @@ def test_stepGOMELT_TAM():
         max_accum_time,
         accum_time,
         record_accum,
+        LPBF_indicator,
+        boundary_conditions,
     )
     assert isinstance(Levels, list)
 
@@ -138,6 +148,7 @@ def test_subcycleGOMELT_TAM():
             L1L2Eratio,
             L2L3Eratio,
             record_accum,
+            boundary_conditions,
         ) = dill.load(f)[0]
 
         # Turn TAM recording on to access end part of code
@@ -160,6 +171,7 @@ def test_subcycleGOMELT_TAM():
                 L1L2Eratio,
                 L2L3Eratio,
                 record_accum,
+                boundary_conditions,
             )
         )
     assert isinstance(Levels, list)

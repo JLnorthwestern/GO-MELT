@@ -49,6 +49,10 @@ def test_SetupProperties_SetupLevels_SetupNonmesh_edge():
     solver_input["Level3"]["bounds"]["z"] = [-1.0, 0.5]
     solver_input["Level1"]["conditions"]["bottom"]["type"] = "Neumann"
     solver_input["Level1"]["conditions"]["bottom"]["function"] = "Convection"
+    solver_input["Level1"]["conditions"]["bottom"]["h_conv"] = {
+        "value": 1e-04,
+        "unit": "W/(mm^2*K)",
+    }
 
     Properties = SetupProperties(solver_input.get("properties", {}))
     assert isinstance(Properties, dict)
@@ -60,13 +64,31 @@ def test_SetupProperties_SetupLevels_SetupNonmesh_edge():
 
 def test_SetupStaticNodesAndElements():
     Levels = [
-        {},  # index 0 unused
-        {"nn": jnp.array(10)},  # Level 1
-        {"ne": jnp.array(20), "nn": jnp.array(30)},  # Level 2
-        {"ne": jnp.array(40), "nn": jnp.array(50)},  # Level 3
+        {
+            "ne": jnp.array(1),
+            "nn": jnp.array(2),
+            "elements": (jnp.array(1), jnp.array(2), jnp.array(3)),
+        },  # Level 0
+        {
+            "ne": jnp.array(5),
+            "nn": jnp.array(10),
+            "elements": (jnp.array(11), jnp.array(12), jnp.array(13)),
+        },  # Level 1
+        {
+            "ne": jnp.array(20),
+            "nn": jnp.array(30),
+            "elements": (jnp.array(21), jnp.array(22), jnp.array(23)),
+        },  # Level 2
+        {
+            "ne": jnp.array(40),
+            "nn": jnp.array(50),
+            "elements": (jnp.array(31), jnp.array(32), jnp.array(33)),
+        },  # Level 3
     ]
     result = SetupStaticNodesAndElements(Levels)
-    assert result == (20, 40, 10, 30, 50)
+    assert result[0] == (1, 5, 20, 40)
+    assert result[1] == (2, 10, 30, 50)
+    assert result[2] == ((1, 2, 3), (11, 12, 13), (21, 22, 23), (31, 32, 33))
 
 
 def test_SetupStaticSubcycle():

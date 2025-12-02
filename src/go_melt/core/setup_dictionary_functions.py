@@ -2,7 +2,7 @@ import json
 import os
 import jax.numpy as jnp
 import copy
-from .boundary_condition_functions import getBCindices
+from .boundary_condition_functions import getBCindices, get_surface_faces
 from .mesh_functions import calc_length_h, calcNumNodes, createMesh3D
 from .data_structures import obj
 from go_melt.utils.helper_functions import (
@@ -158,6 +158,16 @@ def SetupLevels(solver_input: dict, properties: dict) -> list[dict]:
         structure_to_dict(Level2),
         structure_to_dict(Level3),
     ]
+
+    # Post dictionary updates
+    for _ in range(1, 4):
+        Levels[_]["S1ele"], Levels[_]["S1faces"] = get_surface_faces(
+            Levels[_],
+            Levels[_]["active"],
+            Levels[_]["ne"].tolist(),
+            tuple([Levels[_]["elements"][_2].tolist() for _2 in range(3)]),
+        )
+
     return Levels
 
 

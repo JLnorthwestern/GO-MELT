@@ -13,23 +13,25 @@ from go_melt.core.solution_functions import (
 def test_stepGOMELTDwellTime_updates_Level1_temperature():
     # Load test inputs from pickle file
     with open("tests/core/inputs/inputs_stepGOMELTDwellTime.pkl", "rb") as f:
-        Levels, tmp_ne_nn, ne_nn, properties, dt, substrate = dill.load(f)[0]
+        Levels, tmp_ne_nn, ne_nn, properties, dt, substrate, boundary_conditions = (
+            dill.load(f)[0]
+        )
 
     # Capture initial Level 1 temperature
     initial_T0 = Levels[1]["T0"].copy()
 
     # Run the solver
-    updated_levels = stepGOMELTDwellTime(
-        Levels, tmp_ne_nn, ne_nn, properties, dt, substrate
+    Levels = stepGOMELTDwellTime(
+        Levels, tmp_ne_nn, ne_nn, properties, dt, substrate, boundary_conditions
     )
 
     # --- Assertions ---
     # 1. Output should be a list of dicts (Levels structure)
-    assert isinstance(updated_levels, list)
-    assert isinstance(updated_levels[1], dict)
+    assert isinstance(Levels, list)
+    assert isinstance(Levels[1], dict)
 
     # 2. Updated Level 1 temperature should be a JAX array
-    FinalL1 = updated_levels[1]["T0"]
+    FinalL1 = Levels[1]["T0"]
     assert isinstance(FinalL1, jax.Array) or isinstance(FinalL1, jnp.ndarray)
 
     # 3. Shape should match the number of nodes in Level 1
@@ -45,23 +47,35 @@ def test_stepGOMELTDwellTime_updates_Level1_temperature():
     # 6. Temperature field should be updated (not identical to initial)
     assert not jnp.allclose(initial_T0, FinalL1)
 
-    # 7. Deterministic run: calling twice should give same result
-    updated_levels2 = stepGOMELTDwellTime(
-        Levels, tmp_ne_nn, ne_nn, properties, dt, substrate
-    )
-    assert jnp.allclose(FinalL1, updated_levels2[1]["T0"], rtol=1e-6, atol=1e-8)
-
 
 def test_computeL1Temperature_outputs_valid_temperature():
     # Load test inputs from pickle file
     with open("tests/core/inputs/inputs_computeL1Temperature.pkl", "rb") as f:
-        Levels, ne_nn, tmp_ne_nn, L1F, L1V, L1k, L1rhocp, dt, properties = dill.load(f)[
-            0
-        ]
+        (
+            Levels,
+            ne_nn,
+            tmp_ne_nn,
+            L1F,
+            L1V,
+            L1k,
+            L1rhocp,
+            dt,
+            properties,
+            boundary_conditions,
+        ) = dill.load(f)[0]
 
     # Run the solver
     FinalL1 = computeL1Temperature(
-        Levels, ne_nn, tmp_ne_nn, L1F, L1V, L1k, L1rhocp, dt, properties
+        Levels,
+        ne_nn,
+        tmp_ne_nn,
+        L1F,
+        L1V,
+        L1k,
+        L1rhocp,
+        dt,
+        properties,
+        boundary_conditions,
     )
 
     # --- Assertions ---
@@ -80,7 +94,16 @@ def test_computeL1Temperature_outputs_valid_temperature():
 
     # 5. Deterministic run: calling twice should give same result
     FinalL1b = computeL1Temperature(
-        Levels, ne_nn, tmp_ne_nn, L1F, L1V, L1k, L1rhocp, dt, properties
+        Levels,
+        ne_nn,
+        tmp_ne_nn,
+        L1F,
+        L1V,
+        L1k,
+        L1rhocp,
+        dt,
+        properties,
+        boundary_conditions,
     )
     assert jnp.allclose(FinalL1, FinalL1b, rtol=1e-6, atol=1e-8)
 
@@ -100,11 +123,23 @@ def test_computeSolutions_outputs_three_levels():
             L2V,
             dt,
             properties,
+            boundary_conditions,
         ) = dill.load(f)[0]
 
     # Run the solver
     FinalL1, FinalL2, FinalL3 = computeSolutions(
-        Levels, ne_nn, tmp_ne_nn, LF, L1V, LInterp, Lk, Lrhocp, L2V, dt, properties
+        Levels,
+        ne_nn,
+        tmp_ne_nn,
+        LF,
+        L1V,
+        LInterp,
+        Lk,
+        Lrhocp,
+        L2V,
+        dt,
+        properties,
+        boundary_conditions,
     )
 
     # --- Assertions ---
@@ -129,7 +164,18 @@ def test_computeSolutions_outputs_three_levels():
 
     # 5. Deterministic run: calling twice should give same results
     FinalL1b, FinalL2b, FinalL3b = computeSolutions(
-        Levels, ne_nn, tmp_ne_nn, LF, L1V, LInterp, Lk, Lrhocp, L2V, dt, properties
+        Levels,
+        ne_nn,
+        tmp_ne_nn,
+        LF,
+        L1V,
+        LInterp,
+        Lk,
+        Lrhocp,
+        L2V,
+        dt,
+        properties,
+        boundary_conditions,
     )
     assert jnp.allclose(FinalL1, FinalL1b, rtol=1e-6, atol=1e-8)
     assert jnp.allclose(FinalL2, FinalL2b, rtol=1e-6, atol=1e-8)

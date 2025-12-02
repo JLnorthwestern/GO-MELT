@@ -1,6 +1,7 @@
 import pytest
 import dill
 import jax.numpy as jnp
+import jax
 
 from go_melt.core.subgrid_term_functions import (
     computeL2TprimeTerms_Part1,
@@ -14,12 +15,15 @@ from go_melt.utils.interpolation_functions import interpolate_w_matrix
 
 def test_computeL2TprimeTerms_Part1_shapes_and_types():
     with open("tests/core/inputs/inputs_computeL2TprimeTerms_Part1.pkl", "rb") as f:
-        Levels, level_num_elems, L3Tprime0, L3k, Shapes = dill.load(f)
+        Levels, ne_nn, L3Tprime0, L3k, Shapes = dill.load(f)[0]
+
+    key = jax.random.PRNGKey(0)  # seed for reproducibility
+    L3Tprime0 = jax.random.uniform(key, shape=L3Tprime0.shape, dtype=L3Tprime0.dtype)
 
     # Run function
     Level2_Tprime_source = computeL2TprimeTerms_Part1(
         Levels=Levels,
-        level_num_elems=level_num_elems,
+        ne_nn=ne_nn,
         L3Tprime0=L3Tprime0,
         L3k=L3k,
         Shapes=Shapes,
@@ -37,19 +41,19 @@ def test_computeL2TprimeTerms_Part2_shapes_and_consistency():
     with open("tests/core/inputs/inputs_computeL2TprimeTerms_Part2.pkl", "rb") as f:
         (
             Levels,
-            level_num_elems,
+            ne_nn,
             Level3_Tprime1,
             Level3_Tprime0,
             Level3_rhocp,
             dt,
             Shapes,
             Level2_Tprime_source_part1,
-        ) = dill.load(f)
+        ) = dill.load(f)[0]
 
     # Run Part2 using Part1 output as initial source
     Level2_Tprime_source_part2 = computeL2TprimeTerms_Part2(
         Levels=Levels,
-        level_num_elems=level_num_elems,
+        ne_nn=ne_nn,
         Level3_Tprime1=Level3_Tprime1,
         Level3_Tprime0=Level3_Tprime0,
         Level3_rhocp=Level3_rhocp,
@@ -71,11 +75,19 @@ def test_computeL2TprimeTerms_Part2_shapes_and_consistency():
 
 def test_computeL1TprimeTerms_Part1_shapes_and_types():
     with open("tests/core/inputs/inputs_computeL1TprimeTerms_Part1.pkl", "rb") as f:
-        Levels, level_num_elems, Level3_k, Shapes, Level2_k = dill.load(f)
+        Levels, ne_nn, Level3_k, Shapes, Level2_k = dill.load(f)[0]
+    key = jax.random.PRNGKey(0)  # seed for reproducibility
+    Levels[2]["Tprime0"] = jax.random.uniform(
+        key, shape=Levels[2]["Tprime0"].shape, dtype=Levels[2]["Tprime0"].dtype
+    )
+    Levels[3]["Tprime0"] = jax.random.uniform(
+        key, shape=Levels[3]["Tprime0"].shape, dtype=Levels[3]["Tprime0"].dtype
+    )
+
     # Run function
     Level1_Tprime_source = computeL1TprimeTerms_Part1(
         Levels=Levels,
-        level_num_elems=level_num_elems,
+        ne_nn=ne_nn,
         Level3_k=Level3_k,
         Shapes=Shapes,
         Level2_k=Level2_k,
@@ -93,7 +105,7 @@ def test_computeL1TprimeTerms_Part2_shapes_and_consistency():
     with open("tests/core/inputs/inputs_computeL1TprimeTerms_Part2.pkl", "rb") as f:
         (
             Levels,
-            level_num_elems,
+            ne_nn,
             Level3_Tprime1,
             Level2_Tprime1,
             Level3_rhocp,
@@ -101,13 +113,13 @@ def test_computeL1TprimeTerms_Part2_shapes_and_consistency():
             dt,
             Shapes,
             Level1_Tprime_source_part1,
-        ) = dill.load(f)
+        ) = dill.load(f)[0]
     Levels
 
     # Run Part2 using Part1 output as initial source
     Level1_Tprime_source_part2 = computeL1TprimeTerms_Part2(
         Levels=Levels,
-        level_num_elems=level_num_elems,
+        ne_nn=ne_nn,
         Level3_Tprime1=Level3_Tprime1,
         Level2_Tprime1=Level2_Tprime1,
         Level3_rhocp=Level3_rhocp,
@@ -132,7 +144,7 @@ def test_getNewTprime_outputs():
     # Load test inputs
     with open("tests/core/inputs/inputs_getNewTprime.pkl", "rb") as f:
         fine_level, fine_temp, coarse_temp, coarse_level, interpolate_coarse_to_fine = (
-            dill.load(f)
+            dill.load(f)[0]
         )
 
     # Run function
