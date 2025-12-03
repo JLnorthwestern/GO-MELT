@@ -53,6 +53,13 @@ def test_SetupProperties_SetupLevels_SetupNonmesh_edge():
         "value": 1e-04,
         "unit": "W/(mm^2*K)",
     }
+    solver_input["Level1"]["conditions"]["west"]["type"] = "Neumann"
+    solver_input["Level1"]["conditions"]["west"]["function"] = "Adiabatic"
+    solver_input["Level1"]["conditions"]["east"]["type"] = "Neumann"
+    solver_input["Level1"]["conditions"]["east"]["function"] = "Convection"
+    solver_input["Level1"]["conditions"]["south"]["type"] = "Neumann"
+    solver_input["Level1"]["conditions"]["south"]["function"] = "Convection"
+    solver_input["Level1"]["conditions"]["south"]["h_conv"] = {}
 
     Properties = SetupProperties(solver_input.get("properties", {}))
     assert isinstance(Properties, dict)

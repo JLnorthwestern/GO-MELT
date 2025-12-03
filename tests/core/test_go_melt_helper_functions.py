@@ -114,7 +114,7 @@ def test_pre_time_loop_initialization_conditionals(monkeypatch):
             "toolpath": "fake_toolpath.txt",
             "save_path": "fake_save/",
             "record_step": 1,
-            "probe_locations": [],
+            "probe_locations": [(0, 0, 0)],
         },
     }
 
@@ -177,6 +177,9 @@ def test_pre_time_loop_initialization_conditionals(monkeypatch):
     monkeypatch.setattr(helper_functions, "saveState", lambda _1, _2, _3, _4, _5: None)
     monkeypatch.setattr(
         helper_functions, "saveCustom", lambda _1, _2, _3, _4, _5, _6: None
+    )
+    monkeypatch.setattr(
+        helper_functions, "initialize_probe_csv", lambda _1, num_probes: None
     )
 
     # --- Act ---
@@ -357,6 +360,32 @@ def test_time_loop_post_execution_edge(monkeypatch):
         == int(simulation_state.time_inc / simulation_state.Nonmesh["record_step"]) + 1
     )
     assert simulation_state_result.record_inc == 0
+
+
+def test_time_loop_post_execution_edge2(monkeypatch):
+    # Arrange: load input state from pickle
+    with open(Path("tests/core/inputs/inputs_time_loop_post_execution.pkl"), "rb") as f:
+        simulation_state, laser_all, t_loop = dill.load(f)[0]
+
+    # Patch saveResults so it doesn't execute
+    called = {}
+    monkeypatch.setattr(
+        helper_functions, "saveResults", lambda levels, nonmesh, savenum: None
+    )
+    monkeypatch.setattr(
+        helper_functions,
+        "update_probes",
+        lambda _1, _2, _3, _4: called.update({"_1": _1}),
+    )
+
+    simulation_state.new_dwell_flag = False
+    simulation_state.temperature_probe_list = [(0, 0, 0)]
+
+    # Act
+    simulation_state_result = time_loop_post_execution(
+        simulation_state, laser_all, t_loop
+    )
+    assert "_1" in called
 
 
 def test_post_time_loop_finalization_runs(monkeypatch):

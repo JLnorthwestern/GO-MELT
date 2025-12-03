@@ -20,6 +20,27 @@ def test_stepGOMELTDwellTime_updates_Level1_temperature():
     # Capture initial Level 1 temperature
     initial_T0 = Levels[1]["T0"].copy()
 
+    # Convert inner tuples/lists to mutable lists
+    bc0 = list(boundary_conditions[1][0])
+    bc1 = list(boundary_conditions[1][1])
+    bc2 = list(boundary_conditions[1][2])
+
+    # Replace with Neumann
+    bc0[0] = 1
+    bc0[1] = 1
+    # Replace functions with Convection (1) / Adiabatic (2)
+    bc1[0] = 1
+    bc1[1] = 2
+    # Replace values with 1e-5 and nan
+    bc2[0] = 1e-5
+    bc2[1] = jnp.nan
+
+    # Rebuild the outer structure
+    boundary_conditions = (
+        boundary_conditions[0],
+        (tuple(bc0), tuple(bc1), tuple(bc2)) + boundary_conditions[1][3:],
+    ) + boundary_conditions[2:]
+
     # Run the solver
     Levels = stepGOMELTDwellTime(
         Levels, tmp_ne_nn, ne_nn, properties, dt, substrate, boundary_conditions

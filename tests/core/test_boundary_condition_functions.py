@@ -206,23 +206,30 @@ def test_computeConvRadBC(monkeypatch):
     flux_vector = jnp.zeros(num_nodes)
 
     # local_indices: which nodes of each element belong to the boundary face
-    local_indices = jnp.array([0, 1, 2, 3])
+    level_local_indices = []
+    level_local_indices.append((0, 4, 7, 3))
+    level_local_indices.append((1, 2, 6, 5))
+    level_local_indices.append((0, 1, 5, 4))
+    level_local_indices.append((3, 7, 6, 2))
+    level_local_indices.append((0, 3, 2, 1))
+    level_local_indices.append((4, 5, 6, 7))
     bc_index = 0  # pick one boundary face
 
-    result = computeConvRadBC(
-        Level,
-        temperature,
-        num_elems,
-        num_nodes,
-        properties,
-        flux_vector,
-        local_indices,
-        bc_index,
-    )
+    for bc_index in range(6):
+        result = computeConvRadBC(
+            Level,
+            temperature,
+            num_elems,
+            num_nodes,
+            properties,
+            flux_vector,
+            jnp.array(level_local_indices[bc_index]),
+            bc_index,
+        )
 
-    assert result.shape == (num_nodes,)
-    # Should produce nonzero flux contributions
-    assert jnp.any(result != 0.0)
+        assert result.shape == (num_nodes,)
+        # Should produce nonzero flux contributions
+        assert jnp.any(result != 0.0)
 
 
 def test_computeConvectionBC():
@@ -290,26 +297,32 @@ def test_computeConvectionBC():
     flux_vector = jnp.zeros(num_nodes)
 
     # local_indices: which nodes of each element belong to the boundary face
-    local_indices = jnp.array([0, 1, 2, 3])
-    bc_index = 0  # pick one boundary face
+    level_local_indices = []
+    level_local_indices.append((0, 4, 7, 3))
+    level_local_indices.append((1, 2, 6, 5))
+    level_local_indices.append((0, 1, 5, 4))
+    level_local_indices.append((3, 7, 6, 2))
+    level_local_indices.append((0, 3, 2, 1))
+    level_local_indices.append((4, 5, 6, 7))
     h_conv = 10.0e-6
 
-    result = computeConvectionBC(
-        Level,
-        temperature,
-        num_elems,
-        num_nodes,
-        properties,
-        flux_vector,
-        local_indices,
-        bc_index,
-        h_conv,
-    )
+    for bc_index in range(6):
+        result = computeConvectionBC(
+            Level,
+            temperature,
+            num_elems,
+            num_nodes,
+            properties,
+            flux_vector,
+            jnp.array(level_local_indices[bc_index]),
+            bc_index,
+            h_conv,
+        )
 
-    # Check output shape
-    assert result.shape == (num_nodes,)
-    # Should produce nonzero flux contributions
-    assert jnp.any(result != 0.0)
+        # Check output shape
+        assert result.shape == (num_nodes,)
+        # Should produce nonzero flux contributions
+        assert jnp.any(result != 0.0)
 
 
 if __name__ == "__main__":

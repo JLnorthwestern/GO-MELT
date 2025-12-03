@@ -523,8 +523,8 @@ def convert_boundary_types(level: dict) -> dict:
             elif bc.function == "Convection":
                 bc.function = 1
                 bc.value = get_with_units_obj(bc, "h_conv", 1.0e1, "W/(mm^2*K)")
-                delattr(bc, "h_conv")
-
+                if hasattr(bc, "h_conv"):
+                    delattr(bc, "h_conv")
             elif bc.function == "Adiabatic":
                 bc.function = 2
     return level
