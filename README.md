@@ -4,8 +4,6 @@
 
 A GPU-accelerated framework for multiscale problems using [JAX](https://github.com/google/jax). 
 
-New updates (and reworks) will be introduced in 2025 with the publication of two separate papers. New features will include phase-dependent/temperature-dependent material properties, experimental validation, and gcode reader.
-
 # GO-MELT
 GO-MELT, short for GPU-Optimized Multilevel Execution of LPBF Thermal simulations, is a finite element solver used to calculate multiscale problems.
 
@@ -14,10 +12,9 @@ GO-MELT, short for GPU-Optimized Multilevel Execution of LPBF Thermal simulation
 go_melt_folder=GO_MELT \
 && git clone https://github.com/JLnorthwestern/GO-MELT $go_melt_folder \
 && cd $go_melt_folder \
-&& python3 -m venv .venv \
+&& ./script/install.sh \
 && source .venv/bin/activate \
-&& pip3 install -r requirements.txt \
-&& python3 go_melt/go_melt.py
+&& go-melt --config examples/example.json
 ```
 
 ## Citations
@@ -41,7 +38,7 @@ If you found this library useful in academic or industry work, we appreciate you
   publisher = {Elsevier}
 }
 ```
-Efficient part-scale thermal modeling of laser powder bed fusion via a multilevel finite element framework (In press).
+[Efficient part-scale thermal modeling of laser powder bed fusion via a multilevel finite element framework](https://doi.org/10.1016/j.addma.2025.104897).
 ```bibtex
 @article{elahi2025,
   title = {Efficient part-scale thermal modeling of laser powder bed fusion via a multilevel finite element framework},

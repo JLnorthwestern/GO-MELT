@@ -1,6 +1,5 @@
 import re
 import numpy as np
-from computeFunctions import *
 
 
 def parsingGcode(Nonmesh, Properties, L2h):

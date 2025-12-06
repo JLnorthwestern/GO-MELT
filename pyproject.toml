@@ -1,0 +1,37 @@
+[build-system]
+requires = ["setuptools>=61.0", "wheel"]
+build-backend = "setuptools.build_meta"
+
+[project]
+name = "go-melt"
+version = "3.0.0"
+description = "GPU-accelerated multilevel finite-element solver for LPBF thermal simulations"
+readme = "README.md"
+license = { text = "MIT" }
+authors = [{ name = "Your Name", email = "you@example.com" }]
+requires-python = ">=3.9"
+keywords = ["fem", "jax", "gpu", "thermal", "simulation"]
+
+dependencies = [
+  "numpy>=1.24,<2",
+  "setuptools>=61.0",
+  "tqdm>=4.60",
+  "pyyaml>=6.0",
+]
+
+[project.scripts]
+go-melt = "go_melt.cli:main"
+
+[tool.setuptools.packages.find]
+where = ["src"]
+
+[tool.setuptools]
+package-dir = {"" = "src"}
+
+[tool.black]
+line-length = 88
+target-version = ["py39"]
+
+[tool.isort]
+profile = "black"
+

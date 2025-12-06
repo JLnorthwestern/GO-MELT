@@ -100,18 +100,18 @@
     },
     "Level3": {
         "elements": [
-            100,
-            100,
+            140,
+            140,
             10
         ],
         "bounds": {
             "x": [
-                1.0,
-                3.0
+                0.6,
+                3.4
             ],
             "y": [
-                1.0,
-                3.0
+                0.6,
+                3.4
             ],
             "z": [
                 -0.2,
@@ -174,25 +174,24 @@
     "nonmesh": {
         "timestep_L3": { "value": 1e-5, "unit": "s" },
         "dwell_time": { "value": 1.0, "unit": "s" },
-        "wait_time": 1000,
+        "wait_time": 200,
         "output_files": 1,
-        "record_step": 25,
+        "record_step": 24,
         "Level1_record_step": 1,
         "laser_velocity": { "value": 1000, "unit": "mm/s" },
-        "save_path": "./results/example/",
-        "gcode": "./examples/gcodefiles/example.gcode",
-        "toolpath": "./results/example/toolpath.txt",
+        "save_path": "./results/example_multilayer/",
+        "gcode": "./examples/gcodefiles/example_multilayer.gcode",
+        "toolpath": "./results/example_multilayer/toolpath.txt",
         "layer_num": 0,
-        "subcycle_num_L2": 5,
-        "subcycle_num_L3": 5,
+        "subcycle_num_L2": 3,
+        "subcycle_num_L3": 4,
         "info_T": 1,
         "dwell_time_multiplier": 8,
         "use_txt": 0,
         "laser_center": [2.0, 2.0, 0.0, 0, 0, 0, 0],
         "haste": 0,
-        "loop_GOMELT": 1,
-        "record_TAM": 0,
-        "probe_locations": [[2.0, 2.0, 0.04], [8.0, 2.0, 0.04]]
+        "loop_GOMELT": 2,
+        "record_TAM": 1
     }
 }
 

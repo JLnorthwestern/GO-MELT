@@ -1,9 +1,9 @@
 {
     "Level1": {
         "elements": [
-            50,
-            20,
-            30
+            10,
+            10,
+            5
         ],
         "bounds": {
             "x": [
@@ -12,11 +12,11 @@
             ],
             "y": [
                 0,
-                4
+                10
             ],
             "z": [
                 -4,
-                2.0
+                1.0
             ]
         },
         "conditions": {
@@ -53,21 +53,21 @@
     },
     "Level2": {
         "elements": [
-            100,
-            100,
-            10
+            10,
+            10,
+            6
         ],
         "bounds": {
             "x": [
                 0,
-                4
+                5
             ],
             "y": [
                 0,
-                4
+                5
             ],
             "z": [
-                -0.4,
+                -3,
                 0.0
             ]
         },
@@ -100,21 +100,21 @@
     },
     "Level3": {
         "elements": [
-            100,
-            100,
-            10
+            8,
+            8,
+            6
         ],
         "bounds": {
             "x": [
-                1.0,
-                3.0
+                1.5,
+                3.5
             ],
             "y": [
-                1.0,
-                3.0
+                1.5,
+                3.5
             ],
             "z": [
-                -0.2,
+                -1.5,
                 0.0
             ]
         },
@@ -154,45 +154,44 @@
         "heat_capacity_solid_a1": { "value": 0.174, "unit": "J/(kg*K^2)" },
         "heat_capacity_mushy": { "value": 3235.0, "unit": "J/(kg*K)" },
         "heat_capacity_fluid": { "value": 769.0, "unit": "J/(kg*K)" },
-        "density": { "value": 8e-06, "unit": "kg/mm^3" },
-        "laser_radius": { "value": 0.1, "unit": "mm" },
-        "laser_depth": { "value": 0.1, "unit": "mm" },
-        "laser_power": { "value": 285.0, "unit": "W" },
-        "laser_absorptivity": 0.45,
-        "T_amb": { "value": 298.15, "unit": "K" },
-        "T_solidus": { "value": 1533, "unit": "K" },
-        "T_liquidus": { "value": 1609, "unit": "K" },
+        "density": { "value": 8.0e-6, "unit": "kg/mm^3" },
+        "laser_radius": { "value": 0.110, "unit": "mm" },
+        "laser_depth": { "value": 0.05, "unit": "mm" },
+        "laser_power": { "value": 300.0, "unit": "W" },
+        "laser_absorptivity": 0.25,
+        "T_amb": { "value": 353.15, "unit": "K" },
+        "T_solidus": { "value": 1554.0, "unit": "K" },
+        "T_liquidus": { "value": 1625.0, "unit": "K" },
         "T_boiling": { "value": 3038.0, "unit": "K" },
-        "h_conv": { "value": 1.5e-05, "unit": "W/(mm^2*K)" },
+        "h_conv": { "value": 1.473e-5, "unit": "W/(mm^2*K)" },
         "emissivity": 0.3,
         "evaporation_coefficient": 0.82,
         "atomic_mass": { "value": 9.746e-26, "unit": "kg" },
         "latent_heat_evap": { "value": 6457000.0, "unit": "J/kg" },
-        "molar_mass": { "value": 58.69, "unit": "g/mol" },
-        "layer_height": { "value": 0.04, "unit": "mm" }
+	    "molar_mass": { "value": 58.69, "unit": "g/mol" },
+        "layer_height": { "value": 0.5, "unit": "mm" }
     },
     "nonmesh": {
         "timestep_L3": { "value": 1e-5, "unit": "s" },
         "dwell_time": { "value": 1.0, "unit": "s" },
-        "wait_time": 1000,
+        "wait_time": 200,
         "output_files": 1,
         "record_step": 25,
         "Level1_record_step": 1,
         "laser_velocity": { "value": 1000, "unit": "mm/s" },
-        "save_path": "./results/example/",
-        "gcode": "./examples/gcodefiles/example.gcode",
-        "toolpath": "./results/example/toolpath.txt",
+        "save_path": "./results/example_unit/",
+        "gcode": "./examples/gcodefiles/example_unit.gcode",
+        "toolpath": "./results/example_unit/toolpath.txt",
         "layer_num": 0,
-        "subcycle_num_L2": 5,
-        "subcycle_num_L3": 5,
+        "subcycle_num_L2": 4,
+        "subcycle_num_L3": 4,
         "info_T": 1,
         "dwell_time_multiplier": 8,
         "use_txt": 0,
-        "laser_center": [2.0, 2.0, 0.0, 0, 0, 0, 0],
+        "laser_center": [2.5, 2.5, 0.0, 0, 0, 0, 0],
         "haste": 0,
         "loop_GOMELT": 1,
-        "record_TAM": 0,
-        "probe_locations": [[2.0, 2.0, 0.04], [8.0, 2.0, 0.04]]
+        "record_TAM": 0
     }
 }
 
