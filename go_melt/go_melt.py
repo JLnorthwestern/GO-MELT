@@ -8,6 +8,7 @@ import jax
 import jax.numpy as jnp
 import numpy as np
 from computeFunctions import *
+from hasteFunctions import *
 from createPath import parsingGcode, count_lines
 import gc
 import json
@@ -21,14 +22,17 @@ def go_melt(solver_input: dict):
     """
     tstart = time.time()  # Start timer
 
-    level_names = ["L1", "L2", "L3"]
-
     # -------------------------------
     # Setup: Properties, Mesh, Nonmesh
     # -------------------------------
     Properties = SetupProperties(solver_input.get("properties", {}))
     Levels = SetupLevels(solver_input, Properties)
     Nonmesh = SetupNonmesh(solver_input.get("nonmesh", {}))
+
+    if Nonmesh["haste"]:
+        level_names = ["L1", "L2", "L3", "L4"]
+    else:
+        level_names = ["L1", "L2", "L3"]
 
     # -------------------------------
     # Static Mesh Metadata
@@ -81,18 +85,17 @@ def go_melt(solver_input: dict):
     time_inc = record_inc = wait_inc = 0
     t_output = 0.0
     savenum = int(time_inc / Nonmesh["record_step"]) + 1
-    saveResults(Levels, Nonmesh, savenum)
+    saveResults(Levels, Nonmesh, savenum, laser_start)
 
     # -------------------------------
     # Layer Tracking & Accumulation
     # -------------------------------
     laser_prev_z = float("inf")
     _dwell_time_count = 0
-    record_accum = True
+    record_accum = Nonmesh["record_TAM"]
 
-    if record_accum:
-        accum_time = jnp.zeros(Levels[0]["nn"])
-        max_accum_time = jnp.zeros(Levels[0]["nn"])
+    accum_time = jnp.zeros(Levels[0]["nn"])
+    max_accum_time = jnp.zeros(Levels[0]["nn"])
 
     move_hist = [jnp.array(0), jnp.array(0), jnp.array(0)]  # Laser movement history
 
@@ -103,10 +106,23 @@ def go_melt(solver_input: dict):
     ongoing_simulation = single_step = True
 
     # -------------------------------
+    # HASTE Inputs
+    # -------------------------------
+    surrogate_count, track, num, train_num = 0, 0, 0, 0
+    laser_last = np.zeros([1, 7])
+    HASTE_run, HASTE_continue_track, HASTE_ready = False, True, False
+    Levels = update_level_center_indices(Levels, ne_nn, Properties)
+    T_DA_orig = handle_surrogate_mode(Levels, Nonmesh)
+    Test2pos = jnp.zeros(7)
+    flip_flag = None
+    anti_flip_flag = None
+    remaining_HASTE_iterations = 0
+
+    # -------------------------------
     # Toolpath File & Checkpointing
     # -------------------------------
     tool_path_file = open(Nonmesh["toolpath"], "r")
-    np_path = Path(Nonmesh["save_path"] + "checkpoint").absolute()
+    np_path = Path(Nonmesh["save_path"] + "/checkpoint").absolute()
     layer_check = Nonmesh["layer_num"] + Nonmesh["restart_layer_num"]
 
     # -------------------------------
@@ -128,6 +144,26 @@ def go_melt(solver_input: dict):
     else:
         load_chkpt = False
 
+    # Check if any value in x, y, or z is not equal to T_amb
+    needs_initial_condition = any(
+        any(val != Properties["T_amb"] for val in Levels[1]["conditions"][axis])
+        for axis in ["x", "y", "z"]
+    )
+    if needs_initial_condition:
+        (Levels, Shapes, LInterp, move_hist) = moveEverything(
+            laser_start,
+            laser_start,
+            Levels,
+            move_hist,
+            LInterp,
+            L1L2Eratio,
+            L2L3Eratio,
+            Properties["layer_height"],
+        )
+        substrate = getSubstrateNodes(Levels)
+        Levels[1]["T0"] = computeInitialCondition(Levels[1], Properties, substrate)
+        saveResults(Levels, Nonmesh, savenum, laser_start)
+
     # -------------------------------
     # Start Time Loop
     # -------------------------------
@@ -139,12 +175,12 @@ def go_melt(solver_input: dict):
         # -----------------------------------
         _pos = [
             tool_path_file.readline().split(",")
-            for _2 in range(subcycle[0] * subcycle[1])
+            for _2 in range(subcycle[0] * subcycle[1] * subcycle[-1])
         ]
 
         # Convert laser path to array if valid, else handle end-of-file
         if [""] not in _pos:
-            t_add = subcycle[2]
+            t_add = subcycle[2] * subcycle[-1]
             laser_all = jnp.array([[float(val) for val in line] for line in _pos])
         else:
             # Set up for partial single time-stepping and end simulation afterwards
@@ -162,7 +198,13 @@ def go_melt(solver_input: dict):
         single_step = (
             any(laser_all[:, 2] != laser_prev_z)
             or load_chkpt
-            or (wait_inc > max(0, Nonmesh["wait_time"] - subcycle[0] * subcycle[1] * 2))
+            or (
+                wait_inc
+                > max(
+                    0,
+                    Nonmesh["wait_time"] - subcycle[0] * subcycle[1] * subcycle[-1] * 2,
+                )
+            )
             or not ongoing_simulation
             or laser_all.shape[0] == 1
             or (
@@ -175,6 +217,9 @@ def go_melt(solver_input: dict):
         # Single-Step Execution (Equal time step for each Level)
         # -----------------------------------
         if single_step:
+            # If running HASTE, reinitialize
+            surrogate_count = 0
+
             for laser_pos in laser_all:
                 wait_inc = wait_inc + 1 if laser_pos[4] == 0 else 0
 
@@ -186,6 +231,7 @@ def go_melt(solver_input: dict):
                         stepGOMELTDwellTime._clear_cache()
                         subcycleGOMELT._clear_cache()
                         moveEverything._clear_cache()
+                        HASTE.clear_cache()
                         gc.collect()
                         print("Cleared cache")
                     except:
@@ -255,7 +301,7 @@ def go_melt(solver_input: dict):
                             accum_time = jnp.maximum(accum_time, max_accum_time)
                             jnp.savez(
                                 Nonmesh["save_path"]
-                                + "accum_time"
+                                + "/accum_time"
                                 + str(Nonmesh["layer_num"]).zfill(4),
                                 accum_time=accum_time,
                             )
@@ -311,6 +357,14 @@ def go_melt(solver_input: dict):
                         move_vert = False
                         substrate = getSubstrateNodes(Levels)
                         Levels[0]["S1"] = Levels[0]["S1"].at[: substrate[0]].set(1)
+
+                        # For HASTE
+                        Test2pos = Test2pos.at[:].set(laser_all[0, :])
+                        if Nonmesh["haste"]:
+                            Levels[4]["node_coords"] = [
+                                Levels[4]["orig_node_coords"][_] + Test2pos[_]
+                                for _ in range(3)
+                            ]
                         print("Start of new layer")
 
                 # -----------------------------------
@@ -318,7 +372,7 @@ def go_melt(solver_input: dict):
                 # -----------------------------------
                 if wait_inc <= Nonmesh["wait_time"]:
                     # Full GO-MELT step (Levels 1–3)
-                    Levels, all_reset = stepGOMELT(
+                    Levels, max_accum_time, accum_time = stepGOMELT(
                         Levels,
                         ne_nn,
                         tmp_ne_nn,
@@ -329,32 +383,15 @@ def go_melt(solver_input: dict):
                         laser_pos[5],  # Time step size
                         laser_pos[6],  # Power
                         substrate,
+                        max_accum_time,
+                        accum_time,
+                        record_accum,
                     )
 
                     if Nonmesh["info_T"]:
                         print(f"Step {time_inc + 1} / {total_t_inc}")
                         printLevelMaxMin(Levels, level_names)
 
-                    # Update accumulated melt time
-                    if record_accum:
-                        _resetaccumtime = accum_time[Levels[0]["idx"]] * (all_reset > 0)
-                        _max_check = jnp.maximum(
-                            _resetaccumtime, max_accum_time[Levels[0]["idx"]]
-                        )
-                        max_accum_time = max_accum_time.at[Levels[0]["idx"]].set(
-                            _max_check
-                        )
-                        accum_time = accum_time.at[Levels[0]["idx"]].add(
-                            -_resetaccumtime
-                        )
-
-                        accum_time = melting_temp(
-                            Levels[3]["T0"],
-                            laser_pos[5],  # Time step size
-                            Properties["T_liquidus"],
-                            accum_time,
-                            Levels[0]["idx"],
-                        )
                 else:
                     # Dwell time: only update Level 1
                     if (
@@ -418,41 +455,298 @@ def go_melt(solver_input: dict):
                 else 0
             )
 
+            if Nonmesh.get("haste", False):
+                (
+                    HASTE_run,
+                    HASTE_continue_track,
+                    HASTE_ready,
+                    surrogate_count,
+                    track,
+                    num,
+                    laser_last,
+                    Test2pos,
+                    Levels,
+                    remaining_HASTE_iterations,
+                ) = check_surrogate_conditions(
+                    laser_all,
+                    laser_last,
+                    HASTE_ready,
+                    Test2pos,
+                    Levels,
+                    surrogate_count,
+                    track,
+                    num,
+                    HASTE_continue_track,
+                    remaining_HASTE_iterations,
+                )
+            else:
+                HASTE_run = False
+
             # Always move mesh in subcycling
-            (Levels, Shapes, LInterp, move_hist) = moveEverything(
-                laser_all[0, :],
-                laser_start,
-                Levels,
-                move_hist,
-                LInterp,
-                L1L2Eratio,
-                L2L3Eratio,
-                Properties["layer_height"],
-            )
+            if HASTE_run:
+                # Run full GO-MELT subcycling
+                Levels, move_hist, LInterp, max_accum_time, accum_time = HASTE(
+                    Levels,
+                    ne_nn,
+                    substrate,
+                    LInterp,
+                    tmp_ne_nn,
+                    laser_all,
+                    Properties,
+                    subcycle,
+                    max_accum_time,
+                    accum_time,
+                    flip_flag,
+                    record_accum,
+                    laser_start,
+                    move_hist,
+                    L1L2Eratio,
+                    L2L3Eratio,
+                )
+                print("Running HASTE")
+            else:
+                # Run full GO-MELT subcycling
+                (
+                    Levels,
+                    L2all,
+                    L3pall,
+                    move_hist,
+                    LInterp,
+                    max_accum_time,
+                    accum_time,
+                ) = subcycleGOMELT(
+                    Levels,
+                    ne_nn,
+                    substrate,
+                    LInterp,
+                    tmp_ne_nn,
+                    laser_all,
+                    Properties,
+                    subcycle,
+                    max_accum_time,
+                    accum_time,
+                    laser_start,
+                    move_hist,
+                    L1L2Eratio,
+                    L2L3Eratio,
+                    record_accum,
+                )
 
-            # Extract power values for each substep
-            _P = laser_all[:, 6]
+                if (
+                    surrogate_count > Levels[4]["surrogate_count_check"]
+                    and HASTE_continue_track
+                ):
+                    # Construct probe indices from boundary conditions
+                    L4probe = jnp.hstack(
+                        [Levels[4]["BC"][:-1][i] for i in [1, 0, 2, 3, 4]]
+                    )
 
-            # Run full GO-MELT subcycling
-            Levels, L2all, L3all, L3pall, _max_accum, _accum = subcycleGOMELT(
-                Levels,
-                ne_nn,
-                Shapes,
-                substrate,
-                LInterp,
-                tmp_ne_nn,
-                laser_all,
-                Properties,
-                _P,
-                subcycle,
-                max_accum_time[Levels[0]["idx"]],
-                accum_time[Levels[0]["idx"]],
-            )
+                    if Nonmesh["training"]:
+                        # Update counters for training samples
+                        train_num += len(L2all)
+                        num += len(L2all)
+
+                        # Loop through training data in reverse
+                        for _lp in reversed(range(len(L2all))):
+                            train_num -= 1
+                            num -= 1
+
+                            # Update test position
+                            Test2pos = Test2pos.at[:].set(
+                                laser_all[(subcycle[1] * (_lp + 1)) - 1, :]
+                            )
+                            Levels, _ = getLevel4Pos(Levels, laser_all, Test2pos)
+
+                            # Interpolate temperature from Level 2 and 3 to Level 4
+                            L4Tn1 = interpolatePoints(
+                                Levels[2], L2all[_lp, :], Levels[4]["node_coords"]
+                            ) + interpolatePoints(
+                                Levels[3], L3pall[_lp, :], Levels[4]["node_coords"]
+                            )
+
+                            # Interpolate surrogate matrix from Level 0 to Level 4
+                            SurroLInterpTestL0 = interpolatePointsMatrix(
+                                Levels[0], Levels[4]["node_coords"]
+                            )
+                            Levels[4]["S1"] = (
+                                interpolate_w_matrix(
+                                    SurroLInterpTestL0, Levels[0]["S1"]
+                                )
+                                > 1e-3
+                            ).astype(int)
+
+                            # On last iteration, compute probe temperature
+                            if _lp == len(L2all) - 1:
+                                (
+                                    flip_flag,
+                                    anti_flip_flag,
+                                    HASTE_continue_track,
+                                    Levels,
+                                    _,
+                                ) = getflipflag(T_DA_orig, Levels)
+                                _L4probe = anti_flip_flag[L4probe]
+                                Levels[4]["ProbeT"] = L4Tn1[_L4probe]
+
+                            # Save training data if surrogate tracking is enabled
+                            if HASTE_continue_track:
+                                save_path = (
+                                    f"{Nonmesh['haste_training_dir']}/Track{track:05}/"
+                                )
+                                os.makedirs(save_path, exist_ok=True)
+
+                                jnp.savez(
+                                    f"{save_path}FEA_{num:07}",
+                                    s=Levels[4]["S1"][anti_flip_flag],
+                                    probe=Levels[4]["ProbeT"],
+                                    v=L4Tn1[anti_flip_flag],
+                                    track=track,
+                                    xpositions=Levels[4]["node_coords"][0],
+                                    ypositions=Levels[4]["node_coords"][1],
+                                    zpositions=Levels[4]["node_coords"][2],
+                                    Test2pos=Test2pos,
+                                )
+                                HASTE_ready = False
+
+                        # Restore counters
+                        train_num += len(L2all)
+                        num += len(L2all)
+                    else:
+                        # Use last laser position for inference
+                        Test2pos = Test2pos.at[:].set(laser_all[-1, :])
+                        Levels, direction = getLevel4Pos(Levels, laser_all, Test2pos)
+
+                        # Interpolate initial temperature from Level 2 and 3 to Level 4
+                        Levels[4]["T0"] = interpolatePoints(
+                            Levels[2], Levels[2]["T0"], Levels[4]["node_coords"]
+                        ) + interpolatePoints(
+                            Levels[3], Levels[3]["Tprime0"], Levels[4]["node_coords"]
+                        )
+
+                        # Interpolate surrogate matrix from Level 0 to Level 4
+                        SurroLInterpTestL0 = interpolatePointsMatrix(
+                            Levels[0], Levels[4]["node_coords"]
+                        )
+                        Levels[4]["S1"] = (
+                            interpolate_w_matrix(SurroLInterpTestL0, Levels[0]["S1"])
+                            > 1e-2
+                        ).astype(int)
+
+                        # Compute flip flags and surrogate tracking
+                        (
+                            flip_flag,
+                            anti_flip_flag,
+                            HASTE_continue_track,
+                            Levels,
+                            _,
+                        ) = getflipflag(T_DA_orig, Levels)
+
+                        if HASTE_continue_track:
+                            _L4probe = anti_flip_flag[L4probe]
+                            Levels[4]["ProbeIdx"] = _L4probe
+                            # Project temperature onto surrogate basis
+                            Levels[4]["surrogateA"] = Levels[4]["u"].T @ (
+                                Levels[4]["T0"][anti_flip_flag] - Levels[4]["meanA"]
+                            )
+                            HASTE_ready = True
+
+                            axis_map = {
+                                "east": {
+                                    "axis": 0,
+                                    "sign": 1,
+                                    "bounds": Levels[1]["bounds"]["x"],
+                                    "coord": Levels[4]["node_coords"][0],
+                                },
+                                "west": {
+                                    "axis": 0,
+                                    "sign": -1,
+                                    "bounds": Levels[1]["bounds"]["x"],
+                                    "coord": Levels[4]["node_coords"][0],
+                                },
+                                "north": {
+                                    "axis": 1,
+                                    "sign": 1,
+                                    "bounds": Levels[1]["bounds"]["y"],
+                                    "coord": Levels[4]["node_coords"][1],
+                                },
+                                "south": {
+                                    "axis": 1,
+                                    "sign": -1,
+                                    "bounds": Levels[1]["bounds"]["y"],
+                                    "coord": Levels[4]["node_coords"][1],
+                                },
+                            }
+
+                            params = axis_map[direction]
+                            axis = params["axis"]
+                            sign = params["sign"]
+                            bounds = params["bounds"]
+                            coord = params["coord"]
+
+                            remaining_length = (
+                                (bounds[1] - coord[0])
+                                if sign > 0
+                                else (coord[0] - bounds[0])
+                            )
+                            movement_per = (
+                                jnp.diff(laser_all, axis=0)[:, axis].mean()
+                                * laser_all.shape[0]
+                            )
+                            number_remaining = remaining_length // jnp.abs(movement_per)
+
+                            coord_range = coord[0] + movement_per * jnp.arange(
+                                1, number_remaining + 1
+                            )
+
+                            if axis == 0:
+                                test_coords = [
+                                    coord_range,
+                                    jnp.array(
+                                        [
+                                            Levels[4]["node_coords"][1][0],
+                                            Levels[4]["node_coords"][1][-1],
+                                        ]
+                                    ),
+                                    jnp.array([Levels[4]["node_coords"][2][-1]]),
+                                ]
+                                reshape_axis = 0
+                            else:
+                                test_coords = [
+                                    jnp.array(
+                                        [
+                                            Levels[4]["node_coords"][0][0],
+                                            Levels[4]["node_coords"][0][-1],
+                                        ]
+                                    ),
+                                    coord_range,
+                                    jnp.array([Levels[4]["node_coords"][2][-1]]),
+                                ]
+                                reshape_axis = 1
+
+                            remaining_vector = interpolatePoints(
+                                Levels[0], Levels[0]["S1"], test_coords
+                            )
+                            reshaped = remaining_vector.reshape(
+                                test_coords[1].size, test_coords[0].size
+                            ).transpose(1, 0)
+
+                            if reshape_axis == 1:
+                                reshaped = reshaped.T
+                            test_rows = 1 * (reshaped > 0.5)
+                            first_ones = jnp.argmax(test_rows == 1, axis=0)
+                            has_ones = jnp.any(test_rows == 1, axis=0)
+                            first_ones = jnp.where(
+                                has_ones, first_ones, test_rows.shape[0]
+                            )  # -1 means "not found"
+                            first_zeros = jnp.argmax(test_rows == 0, axis=0)
+                            has_zeros = jnp.any(test_rows == 0, axis=0)
+                            first_zeros = jnp.where(
+                                has_zeros, first_zeros, test_rows.shape[0]
+                            )  # -1 means "not found"
+                            remaining_HASTE_iterations = min(
+                                [(first_zeros).max(), (first_ones).max()]
+                            )
+
             gc.collect()
-
-            if record_accum:
-                max_accum_time = max_accum_time.at[Levels[0]["idx"]].set(_max_accum)
-                accum_time = accum_time.at[Levels[0]["idx"]].set(_accum)
 
             # Update counters and total elapsed time
             time_inc += t_add
@@ -467,7 +761,20 @@ def go_melt(solver_input: dict):
         if record_inc >= Nonmesh["record_step"]:
             record_inc = 0
             savenum = int(time_inc / Nonmesh["record_step"]) + 1
-            saveResults(Levels, Nonmesh, savenum)
+            saveResults(Levels, Nonmesh, savenum, laser_all[-1, :], HASTE_run)
+
+            if laser_pos[4] != 0 and "orig_node_coords" in Levels[4]:
+                process_levels_and_save(
+                    Nonmesh,
+                    Test2pos,
+                    laser_all,
+                    Levels,
+                    track,
+                    HASTE_run,
+                    t_output,
+                    savenum,
+                    flip_flag,
+                )
 
         # Print temperature info if enabled
         if Nonmesh["info_T"]:
@@ -479,7 +786,9 @@ def go_melt(solver_input: dict):
         t_now = 1000 * (tend - t_loop)
         t_avg = 1000 * t_duration / time_inc
         execution_time_rem = (
-            ((tend - t_loop) / subcycle[2]) * (total_t_inc - time_inc) / 3600
+            ((tend - t_loop) / (subcycle[2] * subcycle[-1]))
+            * (total_t_inc - time_inc)
+            / 3600
         )
 
         print(
@@ -500,9 +809,17 @@ def go_melt(solver_input: dict):
     # Save final Level 0 state and temperature fields
     saveState(Levels[0], "Level0_", Nonmesh["layer_num"], Nonmesh["save_path"], 0)
     saveResultsFinal(Levels, Nonmesh)
+    saveCustom(
+        Levels[0],
+        max_accum_time * 1e3,
+        "Time Above Melting (ms)",
+        Nonmesh["save_path"],
+        "max_accum_time",
+        0,
+    )
 
     jnp.savez(
-        f"{Nonmesh['save_path']}FinalTemperatureFields",
+        f"{Nonmesh['save_path']}/FinalTemperatureFields",
         L1T=Levels[1]["T0"],
         L2T=Levels[2]["T0"],
         L3T=Levels[3]["T0"],
@@ -511,7 +828,7 @@ def go_melt(solver_input: dict):
     if record_accum:
         accum_time = jnp.maximum(accum_time, max_accum_time)
         jnp.savez(
-            Nonmesh["save_path"] + "accum_time" + str(Nonmesh["layer_num"]).zfill(4),
+            Nonmesh["save_path"] + "/accum_time" + str(Nonmesh["layer_num"]).zfill(4),
             accum_time=accum_time,
         )
 
@@ -531,26 +848,23 @@ def go_melt(solver_input: dict):
 
 
 if __name__ == "__main__":
-    # Clear terminal for clean output
-    os.system("clear")
-
     # -------------------------------
     # Parse Command-Line Arguments
     # -------------------------------
     # Usage: python3 run_go_melt.py DEVICE_ID input_file
     DEVICE_ID = int(sys.argv[1]) if len(sys.argv) > 1 and sys.argv[1].isdigit() else 0
-    input_file = sys.argv[2] if len(sys.argv) > 2 else "examples/example.json"
+    input_file = sys.argv[2] if len(sys.argv) > 2 else "examples/haste_get_test.json"
 
     if len(sys.argv) <= 1:
         print("GPU ID not provided. Setting GPU to 0.")
     if len(sys.argv) <= 2:
-        print("Input file not provided. Using default: 'examples/example.json'.")
+        print("Input file not provided. Using default: 'examples/haste_get_test.json'.")
 
     # -------------------------------
     # Set Environment for JAX
     # -------------------------------
     os.environ["CUDA_DEVICE_ORDER"] = "PCI_BUS_ID"
-    os.environ["XLA_PYTHON_CLIENT_PREALLOCATE"] = "false"
+    os.environ["XLA_PYTHON_CLIENT_MEM_FRACTION"] = ".96"
 
     try:
         # Attempt to assign GPU
